@@ -1,0 +1,15 @@
+[package]
+name = "aether-image"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aether-core = { path = "../aether-core" }
+image = { workspace = true }
+resvg = { workspace = true }
+tiny-skia = { workspace = true }
+fontdb = { workspace = true }
+ttf-parser = { workspace = true }
+blake3 = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }

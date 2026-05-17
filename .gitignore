@@ -1,0 +1,16 @@
+/target
+**/*.rs.bk
+Cargo.lock
+.env
+.graphify_cached.json
+.graphify_uncached.txt
+.graphify_detect.json
+.graphify_ast.json
+.graphify_semantic.json
+.graphify_analysis.json
+.graphify_labels.json
+.graphify_extract.json
+.graphify_incremental.json
+.graphify_old.json
+doc/git_credential.json
+doc/git_credential copy.json

@@ -1,0 +1,18 @@
+{
+  "colorGroups": [
+    {
+      "query": "tag:#community/Core_Orchestration_&_Core_Types",
+      "color": {
+        "a": 1,
+        "rgb": 5142951
+      }
+    },
+    {
+      "query": "tag:#community/Media_Engines_&_Observation",
+      "color": {
+        "a": 1,
+        "rgb": 15896107
+      }
+    }
+  ]
+}

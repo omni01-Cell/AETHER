@@ -1,0 +1,399 @@
+{
+  "directed": false,
+  "multigraph": false,
+  "graph": {
+    "hyperedges": [
+      {
+        "id": "aether_engines",
+        "label": "AETHER Media Engines",
+        "nodes": [
+          "aether_video",
+          "aether_audio",
+          "aether_image",
+          "aether_animation"
+        ],
+        "relation": "form",
+        "confidence": "EXTRACTED",
+        "confidence_score": 1.0,
+        "source_file": "aether_headless_media_engine.md"
+      },
+      {
+        "id": "aether_interfaces",
+        "label": "AETHER Interfaces",
+        "nodes": [
+          "aether_cli",
+          "aether_mcp"
+        ],
+        "relation": "form",
+        "confidence": "EXTRACTED",
+        "confidence_score": 1.0,
+        "source_file": "aether_headless_media_engine.md"
+      }
+    ]
+  },
+  "nodes": [
+    {
+      "label": "AETHER CLI & REPL",
+      "file_type": "document",
+      "source_file": "aether_headless_media_engine.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "aether_cli",
+      "community": 0,
+      "norm_label": "aether cli & repl"
+    },
+    {
+      "label": "AETHER Daemon",
+      "file_type": "document",
+      "source_file": "aether_headless_media_engine.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "aether_daemon",
+      "community": 0,
+      "norm_label": "aether daemon"
+    },
+    {
+      "label": "AETHER Shared Core Types",
+      "file_type": "document",
+      "source_file": "aether_headless_media_engine.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "aether_core",
+      "community": 0,
+      "norm_label": "aether shared core types"
+    },
+    {
+      "label": "Video Engine",
+      "file_type": "document",
+      "source_file": "aether_headless_media_engine.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "aether_video",
+      "community": 1,
+      "norm_label": "video engine"
+    },
+    {
+      "label": "Audio Engine",
+      "file_type": "document",
+      "source_file": "aether_headless_media_engine.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "aether_audio",
+      "community": 1,
+      "norm_label": "audio engine"
+    },
+    {
+      "label": "Image Engine",
+      "file_type": "document",
+      "source_file": "aether_headless_media_engine.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "aether_image",
+      "community": 0,
+      "norm_label": "image engine"
+    },
+    {
+      "label": "Animation Engine",
+      "file_type": "document",
+      "source_file": "aether_headless_media_engine.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "aether_animation",
+      "community": 0,
+      "norm_label": "animation engine"
+    },
+    {
+      "label": "Persistence & SQLite",
+      "file_type": "document",
+      "source_file": "aether_headless_media_engine.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "aether_persistence",
+      "community": 0,
+      "norm_label": "persistence & sqlite"
+    },
+    {
+      "label": "AI Generation Layer",
+      "file_type": "document",
+      "source_file": "aether_headless_media_engine.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "aether_ai",
+      "community": 0,
+      "norm_label": "ai generation layer"
+    },
+    {
+      "label": "MCP Server Integration",
+      "file_type": "document",
+      "source_file": "aether_headless_media_engine.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "aether_mcp",
+      "community": 0,
+      "norm_label": "mcp server integration"
+    },
+    {
+      "label": "Multimodal Observation Protocol",
+      "file_type": "document",
+      "source_file": "Document compl\u00e9mentaire AETHER sur les probl\u00e8mes \u00e0 r\u00e9soudre.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "aether_observation",
+      "community": 1,
+      "norm_label": "multimodal observation protocol"
+    }
+  ],
+  "links": [
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "aether_headless_media_engine.md",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "aether_cli",
+      "target": "aether_daemon"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "aether_headless_media_engine.md",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "aether_cli",
+      "target": "aether_core"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "aether_headless_media_engine.md",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "aether_daemon",
+      "target": "aether_core"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "aether_headless_media_engine.md",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "aether_daemon",
+      "target": "aether_video"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "aether_headless_media_engine.md",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "aether_daemon",
+      "target": "aether_audio"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "aether_headless_media_engine.md",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "aether_daemon",
+      "target": "aether_image"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "aether_headless_media_engine.md",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "aether_daemon",
+      "target": "aether_animation"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "aether_headless_media_engine.md",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "aether_daemon",
+      "target": "aether_persistence"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "aether_headless_media_engine.md",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "aether_daemon",
+      "target": "aether_ai"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "aether_headless_media_engine.md",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "aether_mcp",
+      "target": "aether_daemon"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "aether_headless_media_engine.md",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "aether_video",
+      "target": "aether_core"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "aether_headless_media_engine.md",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "aether_audio",
+      "target": "aether_core"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "aether_headless_media_engine.md",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "aether_image",
+      "target": "aether_core"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "aether_headless_media_engine.md",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "aether_animation",
+      "target": "aether_core"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "aether_headless_media_engine.md",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "aether_persistence",
+      "target": "aether_core"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "aether_headless_media_engine.md",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "aether_ai",
+      "target": "aether_core"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "Document compl\u00e9mentaire AETHER sur les probl\u00e8mes \u00e0 r\u00e9soudre.md",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "aether_observation",
+      "target": "aether_core"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "Document compl\u00e9mentaire AETHER sur les probl\u00e8mes \u00e0 r\u00e9soudre.md",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "aether_observation",
+      "target": "aether_video"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "Document compl\u00e9mentaire AETHER sur les probl\u00e8mes \u00e0 r\u00e9soudre.md",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "aether_observation",
+      "target": "aether_audio"
+    }
+  ],
+  "hyperedges": [
+    {
+      "id": "aether_engines",
+      "label": "AETHER Media Engines",
+      "nodes": [
+        "aether_video",
+        "aether_audio",
+        "aether_image",
+        "aether_animation"
+      ],
+      "relation": "form",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "aether_headless_media_engine.md"
+    },
+    {
+      "id": "aether_interfaces",
+      "label": "AETHER Interfaces",
+      "nodes": [
+        "aether_cli",
+        "aether_mcp"
+      ],
+      "relation": "form",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "aether_headless_media_engine.md"
+    }
+  ]
+}

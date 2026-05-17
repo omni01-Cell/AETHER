@@ -1,0 +1,19 @@
+[package]
+name = "aether-daemon"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aether-core = { path = "../aether-core" }
+aether-persistence = { path = "../aether-persistence" }
+aether-video = { path = "../aether-video" }
+aether-audio = { path = "../aether-audio" }
+aether-image = { path = "../aether-image" }
+tokio = { workspace = true, features = ["full"] }
+bincode = { workspace = true }
+blake3 = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }

@@ -1,0 +1,7 @@
+# Clippy configuration for AETHER workspace
+disallowed-methods = [
+    # Ban unwrap() outside of tests to ensure strict Zero Hallucination Protocol / safe engineering
+    # { path = "std::option::Option::unwrap", reason = "Use expect() or handle error gracefully with ? operator" },
+    # { path = "std::result::Result::unwrap", reason = "Use expect() or handle error gracefully with ? operator" },
+]
+cognitive-complexity-threshold = 20
