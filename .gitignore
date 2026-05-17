@@ -14,3 +14,7 @@ Cargo.lock
 .graphify_old.json
 doc/git_credential.json
 doc/git_credential copy.json
+.GCC/
+.agent/
+doc/
+
