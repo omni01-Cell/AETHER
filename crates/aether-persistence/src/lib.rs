@@ -1,3 +1,6 @@
+pub mod otio;
+pub mod edl;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;

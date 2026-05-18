@@ -1,3 +1,5 @@
+pub mod transitions;
+
 use std::fs;
 use std::path::Path;
 use ffmpeg_next as ffmpeg;
@@ -9,6 +11,8 @@ pub fn get_video_metadata<P: AsRef<Path>>(path: P) -> Result<serde_json::Value, 
     ffmpeg::init().map_err(|e| AetherError::MediaError(format!("FFmpeg init failed: {}", e)))?;
     let ictx = ffmpeg::format::input(&path)
         .map_err(|e| AetherError::MediaError(format!("Failed to open video format: {}", e)))?;
+
+    let has_audio = ictx.streams().best(ffmpeg::media::Type::Audio).is_some();
 
     let (width, height, duration, fps) = if let Some(stream) = ictx.streams().best(ffmpeg::media::Type::Video) {
         let codec = ffmpeg::codec::context::Context::from_parameters(stream.parameters())
@@ -44,6 +48,7 @@ pub fn get_video_metadata<P: AsRef<Path>>(path: P) -> Result<serde_json::Value, 
         "height": height,
         "duration": duration,
         "fps": fps,
+        "has_audio": has_audio,
     }))
 }
 
@@ -436,6 +441,35 @@ mod tests {
         let render_path = dir.join("output.mp4");
         render_video(&comp_asset, "mp4", "h264", "high", &render_path).unwrap();
         assert!(render_path.exists());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_video_transitions_and_speed() {
+        let dir = temp_test_dir();
+        let video_path = dir.join("synthetic.mp4");
+        generate_synthetic_mp4(&video_path);
+
+        let cache_dir = dir.join("cache");
+        let r1 = Ref { kind: RefKind::Video, id: 1 };
+        let asset1 = import_video(&video_path, r1, &cache_dir).unwrap();
+
+        let out_crossfade = dir.join("crossfade.mp4");
+        transitions::render_crossfade(&asset1, &asset1, 0.5, &out_crossfade).unwrap();
+        assert!(out_crossfade.exists());
+
+        let out_wipe = dir.join("wipe.mp4");
+        transitions::render_wipe(&asset1, &asset1, "right", 0.5, &out_wipe).unwrap();
+        assert!(out_wipe.exists());
+
+        let r2 = Ref { kind: RefKind::Video, id: 2 };
+        let speed_asset = transitions::change_speed(&asset1, 2.0, r2, &cache_dir).unwrap();
+        assert_eq!(speed_asset.r, r2);
+        assert!(speed_asset.path.exists());
+        
+        let speed_dur = speed_asset.metadata["duration"].as_f64().unwrap();
+        assert!((speed_dur - 1.0).abs() < 0.25, "Expected duration ~1.0, got: {}", speed_dur);
 
         let _ = fs::remove_dir_all(&dir);
     }

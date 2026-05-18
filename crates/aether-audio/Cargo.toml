@@ -11,3 +11,4 @@ rubato = { workspace = true }
 blake3 = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
+biquad = "0.6.0"

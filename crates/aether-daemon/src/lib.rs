@@ -1,8 +1,10 @@
+pub mod observation;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{RwLock, Mutex};
 use aether_core::{
-    AetherError, RefKind, Asset, AssetKind, ProjectSettings, Command, CommandResult, Snapshot, RefRegistry,
+    AetherError, RefKind, AssetKind, ProjectSettings, Command, CommandResult, Snapshot, RefRegistry,
     CompositionGraph, Node, Connection as GraphConnection, NodeKind, Timeline, Track, Clip,
     TransitionKind, TrackKind, BlendMode
 };
@@ -329,35 +331,103 @@ impl SessionManager {
                 let new_ref = self.registry.allocate(RefKind::Animation);
                 affected_ref = Some(new_ref);
 
-                let orig_dur = original.metadata.get("duration").and_then(|v| v.as_f64()).unwrap_or(5.0);
-                let new_dur = orig_dur / (*factor as f64);
-
-                let speed_asset = Asset {
-                    r: new_ref,
-                    kind: AssetKind::Animation,
-                    path: original.path.clone(),
-                    hash: format!("{}_speed_{}", original.hash, factor),
-                    metadata: serde_json::json!({
-                        "duration": new_dur,
-                        "speed_factor": factor,
-                        "parent_ref": r.to_string(),
-                    }),
-                };
+                let speed_asset = aether_video::transitions::change_speed(
+                    &original,
+                    *factor,
+                    new_ref,
+                    &self.cache_dir,
+                )?;
 
                 self.registry.register(speed_asset.r, speed_asset.clone())?;
                 db.save_asset(&speed_asset)?;
                 msg = format!("Speed-adjusted asset successfully registered as {}", speed_asset.r);
             }
-            Command::Inspect { r, start: _, end: _ } => {
+            Command::Inspect { r, start, end } => {
                 if let Some(asset_ref) = r {
                     let asset = self.registry.resolve(asset_ref)?;
+                    let mut extra_info = String::new();
+                    
+                    let start_t = start.as_ref().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0);
+                    let end_t = end.as_ref().and_then(|s| s.parse::<f64>().ok()).unwrap_or(2.0);
+                    let mid_t = (start_t + end_t) / 2.0;
+                    
+                    match asset.kind {
+                        AssetKind::Video => {
+                            let output_dir = self.cache_dir.join(format!("inspect_frames_{}", asset.hash));
+                            let times = vec![start_t, mid_t, end_t];
+                            
+                            let frames = observation::extract_keyframes(&asset.path, &times, &output_dir)?;
+                            
+                            let contact_sheet_path = self.cache_dir.join(format!("contact_sheet_{}.png", asset.hash));
+                            observation::generate_contact_sheet(&frames, 3, 1, &contact_sheet_path)?;
+                            
+                            extra_info.push_str(&format!("\nContact Sheet Generated: {}", contact_sheet_path.to_string_lossy()));
+                            
+                            let rms = observation::analyze_audio_rms(&asset.path)?;
+                            let anomalies = if !rms.is_empty() {
+                                extra_info.push_str(&format!("\nAudio RMS Blocks Analyzed: {}", rms.len()));
+                                observation::detect_anomalies(&rms, &frames)?
+                            } else {
+                                observation::detect_anomalies(&[], &frames)?
+                            };
+                            
+                            if !anomalies.is_empty() {
+                                extra_info.push_str("\n\n⚠️ Anomalies Detected:");
+                                for anomaly in anomalies {
+                                    extra_info.push_str(&format!("\n  - {}", anomaly));
+                                }
+                            } else {
+                                extra_info.push_str("\n\n✅ No Anomalies Detected.");
+                            }
+                        }
+                        AssetKind::Audio => {
+                            let rms = observation::analyze_audio_rms(&asset.path)?;
+                            extra_info.push_str(&format!("\nAudio RMS Blocks Analyzed: {}", rms.len()));
+                            
+                            let anomalies = observation::detect_anomalies(&rms, &[])?;
+                            if !anomalies.is_empty() {
+                                extra_info.push_str("\n\n⚠️ Anomalies Detected:");
+                                for anomaly in anomalies {
+                                    extra_info.push_str(&format!("\n  - {}", anomaly));
+                                }
+                            } else {
+                                extra_info.push_str("\n\n✅ No Anomalies Detected.");
+                            }
+                        }
+                        AssetKind::Image => {
+                            let frames = vec![asset.path.clone()];
+                            let anomalies = observation::detect_anomalies(&[], &frames)?;
+                            if !anomalies.is_empty() {
+                                extra_info.push_str("\n\n⚠️ Anomalies Detected:");
+                                for anomaly in anomalies {
+                                    extra_info.push_str(&format!("\n  - {}", anomaly));
+                                }
+                            } else {
+                                extra_info.push_str("\n\n✅ No Anomalies Detected.");
+                            }
+                        }
+                        AssetKind::Animation => {
+                            let frames = vec![asset.path.clone()];
+                            let anomalies = observation::detect_anomalies(&[], &frames)?;
+                            if !anomalies.is_empty() {
+                                extra_info.push_str("\n\n⚠️ Anomalies Detected:");
+                                for anomaly in anomalies {
+                                    extra_info.push_str(&format!("\n  - {}", anomaly));
+                                }
+                            } else {
+                                extra_info.push_str("\n\n✅ No Anomalies Detected.");
+                            }
+                        }
+                    }
+                    
                     msg = format!(
-                        "Asset Reference: {}\nKind: {:?}\nPath: {}\nHash: {}\nMetadata: {}",
+                        "Asset Reference: {}\nKind: {:?}\nPath: {}\nHash: {}\nMetadata: {}{}",
                         asset.r,
                         asset.kind,
                         asset.path.to_string_lossy(),
                         asset.hash,
-                        serde_json::to_string_pretty(&asset.metadata).unwrap_or_default()
+                        serde_json::to_string_pretty(&asset.metadata).unwrap_or_default(),
+                        extra_info
                     );
                 } else {
                     msg = "No asset reference specified for inspection".to_string();
@@ -371,22 +441,15 @@ impl SessionManager {
                 let new_ref = self.registry.allocate(RefKind::Audio);
                 affected_ref = Some(new_ref);
 
-                let eq_asset = Asset {
-                    r: new_ref,
-                    kind: AssetKind::Audio,
-                    path: original.path.clone(),
-                    hash: format!("{}_eq_{}_{}", original.hash, filter_type, freq_hz),
-                    metadata: serde_json::json!({
-                        "duration": original.metadata.get("duration").cloned(),
-                        "eq": {
-                            "filter_type": filter_type,
-                            "freq_hz": freq_hz,
-                            "gain_db": gain_db,
-                            "q": q,
-                        },
-                        "parent_ref": r.to_string(),
-                    }),
-                };
+                let eq_asset = aether_audio::apply_eq(
+                    &original,
+                    filter_type,
+                    *freq_hz,
+                    *gain_db,
+                    *q,
+                    new_ref,
+                    &self.cache_dir,
+                )?;
 
                 self.registry.register(eq_asset.r, eq_asset.clone())?;
                 db.save_asset(&eq_asset)?;
@@ -400,22 +463,15 @@ impl SessionManager {
                 let new_ref = self.registry.allocate(RefKind::Audio);
                 affected_ref = Some(new_ref);
 
-                let comp_asset = Asset {
-                    r: new_ref,
-                    kind: AssetKind::Audio,
-                    path: original.path.clone(),
-                    hash: format!("{}_compress_{}", original.hash, threshold_db),
-                    metadata: serde_json::json!({
-                        "duration": original.metadata.get("duration").cloned(),
-                        "compressor": {
-                            "threshold_db": threshold_db,
-                            "ratio": ratio,
-                            "attack_ms": attack_ms,
-                            "release_ms": release_ms,
-                        },
-                        "parent_ref": r.to_string(),
-                    }),
-                };
+                let comp_asset = aether_audio::apply_compressor(
+                    &original,
+                    *threshold_db,
+                    *ratio,
+                    *attack_ms,
+                    *release_ms,
+                    new_ref,
+                    &self.cache_dir,
+                )?;
 
                 self.registry.register(comp_asset.r, comp_asset.clone())?;
                 db.save_asset(&comp_asset)?;
@@ -425,33 +481,18 @@ impl SessionManager {
                 let new_ref = self.registry.allocate(RefKind::Audio);
                 affected_ref = Some(new_ref);
 
-                let mut inputs = Vec::new();
-                let mut max_dur = 0.0;
-                for (idx, r) in refs.iter().enumerate() {
-                    let asset = self.registry.resolve(r)?;
-                    let vol = volumes.get(idx).copied().unwrap_or(1.0);
-                    let pan = pans.get(idx).copied().unwrap_or(0.0);
-                    let dur = asset.metadata.get("duration").and_then(|v| v.as_f64()).unwrap_or(5.0);
-                    if dur > max_dur {
-                         max_dur = dur;
-                    }
-                    inputs.push(serde_json::json!({
-                        "ref": r.to_string(),
-                        "volume": vol,
-                        "pan": pan,
-                    }));
+                let mut assets = Vec::new();
+                for r in refs {
+                    assets.push(self.registry.resolve(r)?.clone());
                 }
 
-                let mixed_asset = Asset {
-                    r: new_ref,
-                    kind: AssetKind::Audio,
-                    path: PathBuf::from("mixed_track.wav"),
-                    hash: format!("mixed_track_{}", new_ref.id),
-                    metadata: serde_json::json!({
-                        "duration": max_dur,
-                        "inputs": inputs,
-                    }),
-                };
+                let mixed_asset = aether_audio::mix_tracks(
+                    &assets,
+                    volumes,
+                    pans,
+                    new_ref,
+                    &self.cache_dir,
+                )?;
 
                 self.registry.register(mixed_asset.r, mixed_asset.clone())?;
                 db.save_asset(&mixed_asset)?;
@@ -471,86 +512,13 @@ impl SessionManager {
                 msg = format!("Keyframes for {} (property: {}):\n{}", r, property, list.join("\n"));
             }
             Command::ExportEdl { output_path } => {
-                // Invariant: Generates a standard CMX 3600 Edit Decision List (EDL) text representing the timeline, and writes it to the specified output path.
                 let timeline = self.timeline.read().unwrap();
-                let mut edl = String::new();
-                edl.push_str("TITLE: AETHER Project\nFCM: NON-DROP FRAME\n\n");
-                let mut event_count = 1;
-                for track in &timeline.tracks {
-                    for clip in &track.clips {
-                        let asset = self.registry.resolve(&clip.asset_ref)?;
-                        let name = asset.path.file_name().and_then(|n| n.to_str()).unwrap_or("UNKNOWN");
-                        
-                        let in_frames = (clip.in_point_ms as f64 * 30.0 / 1000.0) as u64;
-                        let out_frames = (clip.out_point_ms as f64 * 30.0 / 1000.0) as u64;
-                        let offset_frames = (clip.track_offset_ms as f64 * 30.0 / 1000.0) as u64;
-                        let duration_frames = out_frames - in_frames;
-                        
-                        let in_tc = format_timecode(in_frames, 30.0);
-                        let out_tc = format_timecode(out_frames, 30.0);
-                        let start_tc = format_timecode(offset_frames, 30.0);
-                        let end_tc = format_timecode(offset_frames + duration_frames, 30.0);
-                        
-                        edl.push_str(&format!(
-                            "{:03}  AX       V     C        {} {} {} {}\n* FROM CLIP NAME: {}\n\n",
-                            event_count, in_tc, out_tc, start_tc, end_tc, name
-                        ));
-                        event_count += 1;
-                    }
-                }
-                
-                let path = Path::new(output_path);
-                if let Some(parent) = path.parent() {
-                    fs::create_dir_all(parent).map_err(|e| AetherError::IoError(parent.to_string_lossy().to_string(), e.to_string()))?;
-                }
-                fs::write(path, edl).map_err(|e| AetherError::IoError(output_path.clone(), e.to_string()))?;
+                aether_persistence::edl::export_edl(&timeline, &self.registry, output_path)?;
                 msg = format!("EDL successfully exported to {}", output_path);
             }
             Command::ExportOtio { output_path } => {
-                // Invariant: Generates a valid JSON representation adhering to OpenTimelineIO (OTIO) schemas and writes it to the specified output path.
                 let timeline = self.timeline.read().unwrap();
-                let otio_json = serde_json::json!({
-                    "OTIO_SCHEMA": "Timeline.1",
-                    "metadata": {},
-                    "name": "AETHER OTIO Export",
-                    "tracks": timeline.tracks.iter().map(|track| {
-                        serde_json::json!({
-                            "OTIO_SCHEMA": "Track.1",
-                            "kind": match track.kind {
-                                TrackKind::Video => "Video",
-                                TrackKind::Audio => "Audio",
-                            },
-                            "name": track.name,
-                            "children": track.clips.iter().map(|clip| {
-                                serde_json::json!({
-                                    "OTIO_SCHEMA": "Clip.1",
-                                    "name": clip.asset_ref.to_string(),
-                                    "source_range": {
-                                        "OTIO_SCHEMA": "TimeRange.1",
-                                        "duration": {
-                                            "OTIO_SCHEMA": "RationalTime.1",
-                                            "rate": 30.0,
-                                            "value": ((clip.out_point_ms - clip.in_point_ms) as f64 * 30.0 / 1000.0)
-                                        },
-                                        "start_time": {
-                                            "OTIO_SCHEMA": "RationalTime.1",
-                                            "rate": 30.0,
-                                            "value": (clip.in_point_ms as f64 * 30.0 / 1000.0)
-                                        }
-                                    }
-                                })
-                            }).collect::<Vec<_>>()
-                        })
-                    }).collect::<Vec<_>>()
-                });
-                
-                let path = Path::new(output_path);
-                if let Some(parent) = path.parent() {
-                    fs::create_dir_all(parent).map_err(|e| AetherError::IoError(parent.to_string_lossy().to_string(), e.to_string()))?;
-                }
-                let formatted_json = serde_json::to_string_pretty(&otio_json)
-                    .map_err(|e| AetherError::OperationFailed(format!("Failed to format OTIO JSON: {}", e)))?;
-                fs::write(path, formatted_json).map_err(|e| AetherError::IoError(output_path.clone(), e.to_string()))?;
+                aether_persistence::otio::export_otio(&timeline, output_path)?;
                 msg = format!("OTIO successfully exported to {}", output_path);
             }
             Command::Undo => {
@@ -777,20 +745,12 @@ impl SessionManager {
                     let original = temp_registry.resolve(r)?;
                     let new_ref = temp_registry.allocate(RefKind::Animation);
 
-                    let orig_dur = original.metadata.get("duration").and_then(|v| v.as_f64()).unwrap_or(5.0);
-                    let new_dur = orig_dur / (*factor as f64);
-
-                    let speed_asset = Asset {
-                        r: new_ref,
-                        kind: AssetKind::Animation,
-                        path: original.path.clone(),
-                        hash: format!("{}_speed_{}", original.hash, factor),
-                        metadata: serde_json::json!({
-                            "duration": new_dur,
-                            "speed_factor": factor,
-                            "parent_ref": r.to_string(),
-                        }),
-                    };
+                    let speed_asset = aether_video::transitions::change_speed(
+                        &original,
+                        *factor,
+                        new_ref,
+                        &self.cache_dir,
+                    )?;
 
                     temp_registry.register(speed_asset.r, speed_asset.clone())?;
                     db.save_asset(&speed_asset)?;
@@ -799,22 +759,15 @@ impl SessionManager {
                     let original = temp_registry.resolve(r)?;
                     let new_ref = temp_registry.allocate(RefKind::Audio);
 
-                    let eq_asset = Asset {
-                        r: new_ref,
-                        kind: AssetKind::Audio,
-                        path: original.path.clone(),
-                        hash: format!("{}_eq_{}_{}", original.hash, filter_type, freq_hz),
-                        metadata: serde_json::json!({
-                            "duration": original.metadata.get("duration").cloned(),
-                            "eq": {
-                                "filter_type": filter_type,
-                                "freq_hz": freq_hz,
-                                "gain_db": gain_db,
-                                "q": q,
-                            },
-                            "parent_ref": r.to_string(),
-                        }),
-                    };
+                    let eq_asset = aether_audio::apply_eq(
+                        &original,
+                        filter_type,
+                        *freq_hz,
+                        *gain_db,
+                        *q,
+                        new_ref,
+                        &self.cache_dir,
+                    )?;
 
                     temp_registry.register(eq_asset.r, eq_asset.clone())?;
                     db.save_asset(&eq_asset)?;
@@ -823,22 +776,15 @@ impl SessionManager {
                     let original = temp_registry.resolve(r)?;
                     let new_ref = temp_registry.allocate(RefKind::Audio);
 
-                    let comp_asset = Asset {
-                        r: new_ref,
-                        kind: AssetKind::Audio,
-                        path: original.path.clone(),
-                        hash: format!("{}_compress_{}", original.hash, threshold_db),
-                        metadata: serde_json::json!({
-                            "duration": original.metadata.get("duration").cloned(),
-                            "compressor": {
-                                "threshold_db": threshold_db,
-                                "ratio": ratio,
-                                "attack_ms": attack_ms,
-                                "release_ms": release_ms,
-                            },
-                            "parent_ref": r.to_string(),
-                        }),
-                    };
+                    let comp_asset = aether_audio::apply_compressor(
+                        &original,
+                        *threshold_db,
+                        *ratio,
+                        *attack_ms,
+                        *release_ms,
+                        new_ref,
+                        &self.cache_dir,
+                    )?;
 
                     temp_registry.register(comp_asset.r, comp_asset.clone())?;
                     db.save_asset(&comp_asset)?;
@@ -846,33 +792,18 @@ impl SessionManager {
                 Command::MixTracks { refs, volumes, pans } => {
                     let new_ref = temp_registry.allocate(RefKind::Audio);
 
-                    let mut inputs = Vec::new();
-                    let mut max_dur = 0.0;
-                    for (idx, r) in refs.iter().enumerate() {
-                        let asset = temp_registry.resolve(r)?;
-                        let vol = volumes.get(idx).copied().unwrap_or(1.0);
-                        let pan = pans.get(idx).copied().unwrap_or(0.0);
-                        let dur = asset.metadata.get("duration").and_then(|v| v.as_f64()).unwrap_or(5.0);
-                        if dur > max_dur {
-                             max_dur = dur;
-                        }
-                        inputs.push(serde_json::json!({
-                            "ref": r.to_string(),
-                            "volume": vol,
-                            "pan": pan,
-                        }));
+                    let mut assets = Vec::new();
+                    for r in refs {
+                        assets.push(temp_registry.resolve(r)?.clone());
                     }
 
-                    let mixed_asset = Asset {
-                        r: new_ref,
-                        kind: AssetKind::Audio,
-                        path: PathBuf::from("mixed_track.wav"),
-                        hash: format!("mixed_track_{}", new_ref.id),
-                        metadata: serde_json::json!({
-                            "duration": max_dur,
-                            "inputs": inputs,
-                        }),
-                    };
+                    let mixed_asset = aether_audio::mix_tracks(
+                        &assets,
+                        volumes,
+                        pans,
+                        new_ref,
+                        &self.cache_dir,
+                    )?;
 
                     temp_registry.register(mixed_asset.r, mixed_asset.clone())?;
                     db.save_asset(&mixed_asset)?;
@@ -903,15 +834,7 @@ impl SessionManager {
     }
 }
 
-fn format_timecode(frames: u64, fps: f64) -> String {
-    let fps_u = fps as u64;
-    let total_secs = frames / fps_u;
-    let f = frames % fps_u;
-    let h = total_secs / 3600;
-    let m = (total_secs % 3600) / 60;
-    let s = total_secs % 60;
-    format!("{:02}:{:02}:{:02}:{:02}", h, m, s, f)
-}
+
 
 #[cfg(test)]
 mod tests {
@@ -1121,6 +1044,31 @@ mod tests {
         session.rollback_to_cursor(&session.db.lock().unwrap(), 6).unwrap();
         let snap_redone = session.get_snapshot().unwrap();
         assert_eq!(snap_redone.timeline.tracks.len(), 1); // Concat redone!
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_observation_engine_and_inspect() {
+        let dir = temp_project_dir();
+        let session = SessionManager::new(&dir).unwrap();
+
+        // 1. Create Canvas
+        let cmd_canvas = Command::Canvas { width: 100, height: 100, color: "red".to_string() };
+        let res_canvas = session.execute(cmd_canvas).unwrap();
+        let canvas_ref = res_canvas.affected_ref.unwrap();
+
+        // 2. Inspect the Canvas Asset
+        let cmd_inspect = Command::Inspect {
+            r: Some(canvas_ref),
+            start: Some("0.0".to_string()),
+            end: Some("2.0".to_string()),
+        };
+        let res_inspect = session.execute(cmd_inspect).unwrap();
+        assert!(res_inspect.success);
+        assert!(res_inspect.message.contains("Asset Reference"));
+        assert!(res_inspect.message.contains("Kind: Image"));
+        assert!(res_inspect.message.contains("✅ No Anomalies Detected."));
 
         let _ = fs::remove_dir_all(&dir);
     }

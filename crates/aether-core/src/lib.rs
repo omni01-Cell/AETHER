@@ -7,6 +7,20 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+pub mod keyframes;
+
+/// Trait representing a rendering backend for composition graphs.
+pub trait RenderBackend: Send + Sync {
+    /// Render a composition graph to a raw RGBA buffer of width * height * 4 bytes.
+    fn render(
+        &self,
+        graph: &CompositionGraph,
+        width: u32,
+        height: u32,
+        registry: &RefRegistry,
+    ) -> Result<Vec<u8>, AetherError>;
+}
+
 /// Error type for the AETHER multimedia engine.
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AetherError {

@@ -1,3 +1,6 @@
+pub mod cpu;
+pub mod gpu;
+
 use std::fs;
 use std::path::Path;
 use tiny_skia::{Color, Pixmap, Transform};
@@ -324,6 +327,48 @@ mod tests {
         assert!(asset2.path.exists());
         assert_eq!(asset2.metadata["parent_hash"].as_str().unwrap(), asset1.hash);
 
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_render_backends_cpu_and_gpu() {
+        use aether_core::{CompositionGraph, RefRegistry, Node, NodeKind, Connection, FilterKind, RenderBackend};
+        
+        let dir = temp_test_dir();
+        let cache_dir = dir.join("cache");
+        
+        let r1 = Ref { kind: RefKind::Image, id: 1 };
+        let asset1 = create_canvas(100, 100, "red", r1, &cache_dir).unwrap();
+        
+        let registry = RefRegistry::new();
+        registry.register(r1, asset1).unwrap();
+        
+        let mut graph = CompositionGraph::new();
+        graph.add_node(Node { id: 1, kind: NodeKind::Source(r1) });
+        graph.add_node(Node { id: 2, kind: NodeKind::Filter { kind: FilterKind::Brightness { delta: 0.1 } } });
+        graph.add_node(Node { id: 3, kind: NodeKind::Output });
+        
+        graph.connect(Connection { from_node: 1, from_port: 0, to_node: 2, to_port: 0 }).unwrap();
+        graph.connect(Connection { from_node: 2, from_port: 0, to_node: 3, to_port: 0 }).unwrap();
+        graph.output_node = Some(3);
+        
+        let cpu = cpu::CpuBackend;
+        let cpu_data = cpu.render(&graph, 50, 50, &registry).unwrap();
+        assert_eq!(cpu_data.len(), 50 * 50 * 4);
+        
+        let gpu = gpu::GpuBackend;
+        let gpu_res = gpu.render(&graph, 50, 50, &registry);
+        
+        #[cfg(feature = "gpu")]
+        {
+            let gpu_data = gpu_res.unwrap();
+            assert_eq!(gpu_data.len(), 50 * 50 * 4);
+        }
+        #[cfg(not(feature = "gpu"))]
+        {
+            assert!(gpu_res.is_err());
+        }
+        
         let _ = fs::remove_dir_all(&dir);
     }
 }

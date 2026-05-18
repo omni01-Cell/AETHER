@@ -17,3 +17,5 @@ serde_json = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
+tiny-skia = { workspace = true }
+hound = { workspace = true }
