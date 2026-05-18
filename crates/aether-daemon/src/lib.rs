@@ -1019,6 +1019,9 @@ impl SessionManager {
             Command::Snapshot => {
                 msg = "Retrieved snapshot".to_string();
             }
+            Command::Shutdown => {
+                msg = "Daemon shutting down...".to_string();
+            }
             _ => {
                 return Err(AetherError::InvalidCommand("Unsupported command".to_string()));
             }

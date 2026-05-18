@@ -350,6 +350,45 @@ impl Default for ProjectSettings {
     }
 }
 
+/// Metadata and settings of a specific AETHER project.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProjectMetadata {
+    pub schema_version: u32,
+    pub project_id: String,
+    pub name: String,
+    pub root: PathBuf,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
+    pub aether_version: String,
+    pub description: Option<String>,
+}
+
+/// The run-time status of a project.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ProjectStatus {
+    Open,
+    Closed,
+    Missing,
+}
+
+/// An entry in the global user projects registry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProjectRegistryEntry {
+    pub project_id: String,
+    pub name: String,
+    pub root: PathBuf,
+    pub last_opened_at_ms: i64,
+    pub status: ProjectStatus,
+}
+
+/// The global registry of all AETHER projects known to the user.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProjectRegistry {
+    pub schema_version: u32,
+    pub active_project_id: Option<String>,
+    pub projects: Vec<ProjectRegistryEntry>,
+}
+
 /// Unique identifier for a graph node.
 pub type NodeId = u64;
 
@@ -855,6 +894,27 @@ pub enum Command {
     CancelGeneration {
         r: Ref,
     },
+    // Project management commands
+    ProjectCreate {
+        name: String,
+        dir: Option<PathBuf>,
+        adopt: bool,
+        force: bool,
+    },
+    ProjectOpen {
+        target: String,
+    },
+    ProjectCurrent,
+    ProjectClose {
+        target: Option<String>,
+    },
+    ProjectList,
+    ProjectDelete {
+        target: String,
+        force: bool,
+        archive: bool,
+    },
+    Shutdown,
 }
 
 /// Standardized output structure after executing a command.

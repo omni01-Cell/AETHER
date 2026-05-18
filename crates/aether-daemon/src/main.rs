@@ -89,6 +89,8 @@ async fn handle_connection(mut stream: UnixStream, session: Arc<SessionManager>)
         // Parse command request
         let req_parsed: Result<IncomingRequest, _> = serde_json::from_str(trimmed);
         
+        let mut is_shutdown = false;
+        
         let response_bytes = match req_parsed {
             Ok(IncomingRequest::JsonRpc { jsonrpc, method, params, id }) => {
                 if method != "execute" {
@@ -100,6 +102,9 @@ async fn handle_connection(mut stream: UnixStream, session: Arc<SessionManager>)
                     };
                     serde_json::to_vec(&err_resp)?
                 } else {
+                    if matches!(params, Command::Shutdown) {
+                        is_shutdown = true;
+                    }
                     match session.execute(params) {
                         Ok(res) => {
                             let resp = JsonRpcResponse {
@@ -123,6 +128,9 @@ async fn handle_connection(mut stream: UnixStream, session: Arc<SessionManager>)
                 }
             }
             Ok(IncomingRequest::Direct(cmd)) => {
+                if matches!(cmd, Command::Shutdown) {
+                    is_shutdown = true;
+                }
                 match session.execute(cmd) {
                     Ok(res) => serde_json::to_vec(&res)?,
                     Err(e) => {
@@ -152,6 +160,11 @@ async fn handle_connection(mut stream: UnixStream, session: Arc<SessionManager>)
         writer.write_all(&response_bytes).await?;
         writer.write_all(b"\n").await?;
         writer.flush().await?;
+
+        if is_shutdown {
+            println!("Shutdown command processed successfully. Terminating daemon...");
+            std::process::exit(0);
+        }
 
         line.clear();
     }

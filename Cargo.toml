@@ -9,6 +9,7 @@ members = [
     "crates/aether-image",
     "crates/aether-persistence",
     "crates/aether-generate",
+    "crates/aether-project",
 ]
 
 [workspace.dependencies]
