@@ -9,7 +9,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 use aether_core::{
     AetherError, Ref, Asset, AssetKind, ProjectSettings, Command,
     CompositionGraph, Node, Connection as GraphConnection, NodeId, NodeKind,
-    Timeline, Track, Clip, TransitionKind, TrackKind
+    Timeline, Track, Clip, TransitionKind, TrackKind,
+    GenerationJob, GenerationStatus
 };
 
 /// Database manager for the AETHER persistence layer.
@@ -39,6 +40,8 @@ impl DbManager {
 
     /// Initializes all required tables and default settings if not already present.
     fn initialize_schema(&self) -> Result<(), AetherError> {
+        // Invariant: Initializes all required database tables and default project settings, ensuring the schema matches the specifications exactly.
+
         // 1. Settings Table
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS project_settings (
@@ -47,10 +50,34 @@ impl DbManager {
                 width INTEGER NOT NULL,
                 height INTEGER NOT NULL,
                 colorspace TEXT NOT NULL,
-                history_cursor INTEGER NOT NULL DEFAULT 0
+                current_branch TEXT NOT NULL DEFAULT 'main',
+                current_commit TEXT NOT NULL DEFAULT ''
             );",
             [],
         ).map_err(|e| AetherError::DatabaseError(format!("Create project_settings failed: {}", e)))?;
+
+        // 1b. Branches Table
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS branches (
+                name TEXT PRIMARY KEY,
+                head_commit TEXT NOT NULL
+            );",
+            [],
+        ).map_err(|e| AetherError::DatabaseError(format!("Create branches failed: {}", e)))?;
+
+        // Insert default branch if empty
+        let count_branches: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM branches",
+            [],
+            |row| row.get(0),
+        ).map_err(|e| AetherError::DatabaseError(format!("Check branches count failed: {}", e)))?;
+
+        if count_branches == 0 {
+            self.conn.execute(
+                "INSERT INTO branches (name, head_commit) VALUES ('main', '')",
+                [],
+            ).map_err(|e| AetherError::DatabaseError(format!("Insert default branch failed: {}", e)))?;
+        }
 
         // Insert default settings if empty
         let count: i64 = self.conn.query_row(
@@ -62,8 +89,8 @@ impl DbManager {
         if count == 0 {
             let defaults = ProjectSettings::default();
             self.conn.execute(
-                "INSERT INTO project_settings (id, fps, width, height, colorspace, history_cursor)
-                 VALUES (1, ?1, ?2, ?3, ?4, 0)",
+                "INSERT INTO project_settings (id, fps, width, height, colorspace, current_branch, current_commit)
+                 VALUES (1, ?1, ?2, ?3, ?4, 'main', '')",
                 params![defaults.fps, defaults.width, defaults.height, defaults.colorspace],
             ).map_err(|e| AetherError::DatabaseError(format!("Insert default settings failed: {}", e)))?;
         }
@@ -83,10 +110,10 @@ impl DbManager {
         // 3. History Table
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS history (
-                seq_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                commit_hash TEXT PRIMARY KEY,
+                parent_hash TEXT,
+                branch TEXT NOT NULL,
                 command TEXT NOT NULL,
-                hash_before TEXT,
-                hash_after TEXT,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             );",
             [],
@@ -162,37 +189,85 @@ impl DbManager {
             [],
         ).map_err(|e| AetherError::DatabaseError(format!("Create keyframes failed: {}", e)))?;
 
+        // 10. State Checkpoints Table
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS state_checkpoints (
+                commit_hash TEXT PRIMARY KEY,
+                timeline TEXT NOT NULL,
+                graph TEXT NOT NULL,
+                assets TEXT NOT NULL,
+                settings TEXT NOT NULL
+            );",
+            [],
+        ).map_err(|e| AetherError::DatabaseError(format!("Create state_checkpoints failed: {}", e)))?;
+
+        // 11. Generation Jobs Table
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS generation_jobs (
+                ref_id TEXT PRIMARY KEY,
+                kind TEXT NOT NULL,
+                status TEXT NOT NULL,
+                requested_model TEXT,
+                resolved_model TEXT,
+                provider_job_id TEXT,
+                prompt TEXT,
+                inputs TEXT NOT NULL,
+                artifacts TEXT NOT NULL,
+                error TEXT,
+                created_at_ms INTEGER NOT NULL,
+                updated_at_ms INTEGER NOT NULL,
+                options TEXT NOT NULL
+            );",
+            [],
+        ).map_err(|e| AetherError::DatabaseError(format!("Create generation_jobs failed: {}", e)))?;
+
+        // 12. Generation Events Table
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS generation_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_ref TEXT NOT NULL,
+                status TEXT NOT NULL,
+                message TEXT NOT NULL,
+                timestamp_ms INTEGER NOT NULL
+            );",
+            [],
+        ).map_err(|e| AetherError::DatabaseError(format!("Create generation_events failed: {}", e)))?;
+
         Ok(())
     }
 
-    /// Saves the current project settings and history cursor.
-    pub fn save_settings(&self, settings: &ProjectSettings, history_cursor: usize) -> Result<(), AetherError> {
+    /// Saves the current project settings, current branch, and current commit.
+    pub fn save_settings(&self, settings: &ProjectSettings, current_branch: &str, current_commit: &str) -> Result<(), AetherError> {
+        // Invariant: Updates the settings, current branch, and current commit in the database, guaranteeing they persist on disk.
         self.conn.execute(
             "UPDATE project_settings
-             SET fps = ?1, width = ?2, height = ?3, colorspace = ?4, history_cursor = ?5
+             SET fps = ?1, width = ?2, height = ?3, colorspace = ?4, current_branch = ?5, current_commit = ?6
              WHERE id = 1",
             params![
                 settings.fps,
                 settings.width,
                 settings.height,
                 settings.colorspace,
-                history_cursor as i64
+                current_branch,
+                current_commit
             ],
         ).map_err(|e| AetherError::DatabaseError(format!("Update settings failed: {}", e)))?;
         Ok(())
     }
 
-    /// Loads the project settings and history cursor.
-    pub fn load_settings(&self) -> Result<(ProjectSettings, usize), AetherError> {
+    /// Loads the project settings, current branch, and current commit.
+    pub fn load_settings(&self) -> Result<(ProjectSettings, String, String), AetherError> {
+        // Invariant: Reconstructs and returns the settings, current branch, and current commit from the database table.
         self.conn.query_row(
-            "SELECT fps, width, height, colorspace, history_cursor FROM project_settings WHERE id = 1",
+            "SELECT fps, width, height, colorspace, current_branch, current_commit FROM project_settings WHERE id = 1",
             [],
             |row| {
                 let fps: f64 = row.get(0)?;
                 let width: u32 = row.get(1)?;
                 let height: u32 = row.get(2)?;
                 let colorspace: String = row.get(3)?;
-                let history_cursor: i64 = row.get(4)?;
+                let current_branch: String = row.get(4)?;
+                let current_commit: String = row.get(5)?;
                 Ok((
                     ProjectSettings {
                         fps: fps as f32,
@@ -200,7 +275,8 @@ impl DbManager {
                         height,
                         colorspace,
                     },
-                    history_cursor as usize,
+                    current_branch,
+                    current_commit,
                 ))
             },
         ).map_err(|e| AetherError::DatabaseError(format!("Load settings failed: {}", e)))
@@ -294,58 +370,51 @@ impl DbManager {
     /// Appends a new command to the project execution history.
     pub fn add_history_entry(
         &self,
+        commit_hash: &str,
+        parent_hash: Option<&str>,
+        branch: &str,
         command: &Command,
-        hash_before: Option<&str>,
-        hash_after: Option<&str>,
-    ) -> Result<usize, AetherError> {
+    ) -> Result<(), AetherError> {
+        // Invariant: Inserts a new commit entry into the history graph with its hash, parent, branch, and command.
         let cmd_str = serde_json::to_string(command)
             .map_err(|e| AetherError::DatabaseError(format!("Serialize command failed: {}", e)))?;
 
         self.conn.execute(
-            "INSERT INTO history (command, hash_before, hash_after)
-             VALUES (?1, ?2, ?3)",
-            params![cmd_str, hash_before, hash_after],
+            "INSERT OR REPLACE INTO history (commit_hash, parent_hash, branch, command)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![commit_hash, parent_hash, branch, cmd_str],
         ).map_err(|e| AetherError::DatabaseError(format!("Insert history failed: {}", e)))?;
 
-        let id: i64 = self.conn.last_insert_rowid();
-        Ok(id as usize)
+        Ok(())
     }
 
     /// Loads the complete execution history list.
-    pub fn load_history(&self) -> Result<Vec<(usize, Command, Option<String>, Option<String>)>, AetherError> {
+    pub fn load_history(&self) -> Result<Vec<(String, Option<String>, String, Command)>, AetherError> {
+        // Invariant: Retrieves and returns all commit entries in the history graph sorted by their timestamp.
         let mut stmt = self.conn.prepare(
-            "SELECT seq_id, command, hash_before, hash_after FROM history ORDER BY seq_id ASC",
+            "SELECT commit_hash, parent_hash, branch, command FROM history ORDER BY timestamp ASC",
         ).map_err(|e| AetherError::DatabaseError(format!("Prepare history query failed: {}", e)))?;
 
         let history_iter = stmt.query_map([], |row| {
-            let seq_id: i64 = row.get(0)?;
-            let cmd_str: String = row.get(1)?;
-            let hash_before: Option<String> = row.get(2)?;
-            let hash_after: Option<String> = row.get(3)?;
-            Ok((seq_id as usize, cmd_str, hash_before, hash_after))
+            let commit_hash: String = row.get(0)?;
+            let parent_hash: Option<String> = row.get(1)?;
+            let branch: String = row.get(2)?;
+            let cmd_str: String = row.get(3)?;
+            Ok((commit_hash, parent_hash, branch, cmd_str))
         }).map_err(|e| AetherError::DatabaseError(format!("Query history failed: {}", e)))?;
 
         let mut history = Vec::new();
         for item in history_iter {
-            let (seq_id, cmd_str, hash_before, hash_after) = item
+            let (commit_hash, parent_hash, branch, cmd_str) = item
                 .map_err(|e| AetherError::DatabaseError(format!("Read history row failed: {}", e)))?;
 
             let command: Command = serde_json::from_str(&cmd_str)
                 .map_err(|e| AetherError::DatabaseError(format!("Deserialize command failed: {}", e)))?;
 
-            history.push((seq_id, command, hash_before, hash_after));
+            history.push((commit_hash, parent_hash, branch, command));
         }
 
         Ok(history)
-    }
-
-    /// Clears the history log entirely or trims it up to a sequence ID.
-    pub fn truncate_history_after(&self, seq_id: usize) -> Result<(), AetherError> {
-        self.conn.execute(
-            "DELETE FROM history WHERE seq_id > ?1",
-            params![seq_id as i64],
-        ).map_err(|e| AetherError::DatabaseError(format!("Truncate history failed: {}", e)))?;
-        Ok(())
     }
 
     /// Clears the history log entirely.
@@ -353,6 +422,103 @@ impl DbManager {
         self.conn.execute("DELETE FROM history", [])
             .map_err(|e| AetherError::DatabaseError(format!("Clear history failed: {}", e)))?;
         Ok(())
+    }
+
+    /// Saves a branch head commit.
+    pub fn save_branch(&self, name: &str, head_commit: &str) -> Result<(), AetherError> {
+        // Invariant: Registers or updates a branch with its head commit in the branches table.
+        self.conn.execute(
+            "INSERT OR REPLACE INTO branches (name, head_commit) VALUES (?1, ?2)",
+            params![name, head_commit],
+        ).map_err(|e| AetherError::DatabaseError(format!("Save branch failed: {}", e)))?;
+        Ok(())
+    }
+
+    /// Loads a branch head commit.
+    pub fn load_branch_head(&self, name: &str) -> Result<Option<String>, AetherError> {
+        // Invariant: Retrieves the head commit of the given branch name if it exists.
+        let head: Option<String> = self.conn.query_row(
+            "SELECT head_commit FROM branches WHERE name = ?1",
+            params![name],
+            |row| row.get(0),
+        ).optional().map_err(|e| AetherError::DatabaseError(format!("Load branch head failed: {}", e)))?;
+        Ok(head)
+    }
+
+    /// Loads all branches.
+    pub fn load_all_branches(&self) -> Result<Vec<(String, String)>, AetherError> {
+        // Invariant: Returns all existing branch records with their names and head commits.
+        let mut stmt = self.conn.prepare("SELECT name, head_commit FROM branches")
+            .map_err(|e| AetherError::DatabaseError(format!("Prepare branches query failed: {}", e)))?;
+
+        let branch_iter = stmt.query_map([], |row| {
+            let name: String = row.get(0)?;
+            let head_commit: String = row.get(1)?;
+            Ok((name, head_commit))
+        }).map_err(|e| AetherError::DatabaseError(format!("Query branches failed: {}", e)))?;
+
+        let mut branches = Vec::new();
+        for item in branch_iter {
+            branches.push(item.map_err(|e| AetherError::DatabaseError(format!("Read branch failed: {}", e)))?);
+        }
+        Ok(branches)
+    }
+
+    /// Saves a full state checkpoint for a commit.
+    pub fn save_checkpoint(
+        &self,
+        commit_hash: &str,
+        timeline: &Timeline,
+        graph: &CompositionGraph,
+        assets: &[Asset],
+        settings: &ProjectSettings,
+    ) -> Result<(), AetherError> {
+        // Invariant: Persists a serialized full state checkpoint of the timeline, graph, active assets, and settings under the specified commit hash.
+        let timeline_str = serde_json::to_string(timeline)
+            .map_err(|e| AetherError::DatabaseError(format!("Serialize timeline failed: {}", e)))?;
+        let graph_str = serde_json::to_string(graph)
+            .map_err(|e| AetherError::DatabaseError(format!("Serialize graph failed: {}", e)))?;
+        let assets_str = serde_json::to_string(assets)
+            .map_err(|e| AetherError::DatabaseError(format!("Serialize assets failed: {}", e)))?;
+        let settings_str = serde_json::to_string(settings)
+            .map_err(|e| AetherError::DatabaseError(format!("Serialize settings failed: {}", e)))?;
+
+        self.conn.execute(
+            "INSERT OR REPLACE INTO state_checkpoints (commit_hash, timeline, graph, assets, settings)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![commit_hash, timeline_str, graph_str, assets_str, settings_str],
+        ).map_err(|e| AetherError::DatabaseError(format!("Save checkpoint failed: {}", e)))?;
+        Ok(())
+    }
+
+    /// Loads a full state checkpoint for a commit.
+    pub fn load_checkpoint(
+        &self,
+        commit_hash: &str,
+    ) -> Result<(Timeline, CompositionGraph, Vec<Asset>, ProjectSettings), AetherError> {
+        // Invariant: Retrieves and deserializes the full state checkpoint (timeline, graph, assets, settings) corresponding to the given commit hash.
+        self.conn.query_row(
+            "SELECT timeline, graph, assets, settings FROM state_checkpoints WHERE commit_hash = ?1",
+            params![commit_hash],
+            |row| {
+                let timeline_str: String = row.get(0)?;
+                let graph_str: String = row.get(1)?;
+                let assets_str: String = row.get(2)?;
+                let settings_str: String = row.get(3)?;
+                Ok((timeline_str, graph_str, assets_str, settings_str))
+            },
+        ).map_err(|e| AetherError::DatabaseError(format!("Query checkpoint failed: {}", e)))
+        .and_then(|(timeline_str, graph_str, assets_str, settings_str)| {
+            let timeline = serde_json::from_str(&timeline_str)
+                .map_err(|e| AetherError::DatabaseError(format!("Deserialize timeline checkpoint failed: {}", e)))?;
+            let graph = serde_json::from_str(&graph_str)
+                .map_err(|e| AetherError::DatabaseError(format!("Deserialize graph checkpoint failed: {}", e)))?;
+            let assets = serde_json::from_str(&assets_str)
+                .map_err(|e| AetherError::DatabaseError(format!("Deserialize assets checkpoint failed: {}", e)))?;
+            let settings = serde_json::from_str(&settings_str)
+                .map_err(|e| AetherError::DatabaseError(format!("Deserialize settings checkpoint failed: {}", e)))?;
+            Ok((timeline, graph, assets, settings))
+        })
     }
 
     /// Saves the composition graph.
@@ -591,6 +757,190 @@ impl DbManager {
         Ok(list)
     }
 
+    /// Invariant: must save or update the specified GenerationJob in the database, serializing all sub-structures to JSON and validating parameters.
+    pub fn save_generation_job(&self, job: &GenerationJob) -> Result<(), AetherError> {
+        let ref_id = job.job_ref.to_string();
+        let kind_str = serde_json::to_string(&job.kind)
+            .map_err(|e| AetherError::DatabaseError(format!("Serialize GenerationKind failed: {}", e)))?;
+        let status_str = serde_json::to_string(&job.status)
+            .map_err(|e| AetherError::DatabaseError(format!("Serialize GenerationStatus failed: {}", e)))?;
+        let requested_model_str = job.requested_model.clone();
+        let resolved_model_str = job.resolved_model.as_ref()
+            .map(|m| serde_json::to_string(m).unwrap());
+        let provider_job_id_str = job.provider_job_id.clone();
+        let prompt_str = job.prompt.as_ref()
+            .map(|p| serde_json::to_string(p).unwrap());
+        let inputs_str = serde_json::to_string(&job.inputs)
+            .map_err(|e| AetherError::DatabaseError(format!("Serialize job inputs failed: {}", e)))?;
+        let artifacts_str = serde_json::to_string(&job.artifacts)
+            .map_err(|e| AetherError::DatabaseError(format!("Serialize job artifacts failed: {}", e)))?;
+        let error_str = job.error.clone();
+        let created_at_ms = job.created_at_ms as i64;
+        let updated_at_ms = job.updated_at_ms as i64;
+        let options_str = serde_json::to_string(&job.options)
+            .map_err(|e| AetherError::DatabaseError(format!("Serialize job options failed: {}", e)))?;
+
+        self.conn.execute(
+            "INSERT OR REPLACE INTO generation_jobs (
+                ref_id, kind, status, requested_model, resolved_model, provider_job_id,
+                prompt, inputs, artifacts, error, created_at_ms, updated_at_ms, options
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            params![
+                ref_id,
+                kind_str,
+                status_str,
+                requested_model_str,
+                resolved_model_str,
+                provider_job_id_str,
+                prompt_str,
+                inputs_str,
+                artifacts_str,
+                error_str,
+                created_at_ms,
+                updated_at_ms,
+                options_str,
+            ],
+        ).map_err(|e| AetherError::DatabaseError(format!("Save generation job failed: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Invariant: must load and deserialize the GenerationJob associated with the given Ref from the database.
+    pub fn load_generation_job(&self, r: &Ref) -> Result<GenerationJob, AetherError> {
+        let ref_id = r.to_string();
+        self.conn.query_row(
+            "SELECT ref_id, kind, status, requested_model, resolved_model, provider_job_id,
+                    prompt, inputs, artifacts, error, created_at_ms, updated_at_ms, options
+             FROM generation_jobs WHERE ref_id = ?1",
+            params![ref_id],
+            |row| {
+                let ref_id_str: String = row.get(0)?;
+                let kind_str: String = row.get(1)?;
+                let status_str: String = row.get(2)?;
+                let requested_model: Option<String> = row.get(3)?;
+                let resolved_model_str: Option<String> = row.get(4)?;
+                let provider_job_id: Option<String> = row.get(5)?;
+                let prompt_str: Option<String> = row.get(6)?;
+                let inputs_str: String = row.get(7)?;
+                let artifacts_str: String = row.get(8)?;
+                let error: Option<String> = row.get(9)?;
+                let created_at_ms: i64 = row.get(10)?;
+                let updated_at_ms: i64 = row.get(11)?;
+                let options_str: String = row.get(12)?;
+
+                Ok((
+                    ref_id_str,
+                    kind_str,
+                    status_str,
+                    requested_model,
+                    resolved_model_str,
+                    provider_job_id,
+                    prompt_str,
+                    inputs_str,
+                    artifacts_str,
+                    error,
+                    created_at_ms,
+                    updated_at_ms,
+                    options_str,
+                ))
+            },
+        ).map_err(|e| AetherError::DatabaseError(format!("Query generation job failed: {}", e)))
+        .and_then(|(ref_id_str, kind_str, status_str, requested_model, resolved_model_str, provider_job_id, prompt_str, inputs_str, artifacts_str, error, created_at_ms, updated_at_ms, options_str)| {
+            let job_ref = Ref::from_str(&ref_id_str)?;
+            let kind = serde_json::from_str(&kind_str)
+                .map_err(|e| AetherError::DatabaseError(format!("Deserialize kind failed: {}", e)))?;
+            let status = serde_json::from_str(&status_str)
+                .map_err(|e| AetherError::DatabaseError(format!("Deserialize status failed: {}", e)))?;
+            let resolved_model = match resolved_model_str {
+                Some(s) => Some(serde_json::from_str(&s)
+                    .map_err(|e| AetherError::DatabaseError(format!("Deserialize resolved_model failed: {}", e)))?),
+                None => None,
+            };
+            let prompt = match prompt_str {
+                Some(s) => Some(serde_json::from_str(&s)
+                    .map_err(|e| AetherError::DatabaseError(format!("Deserialize prompt failed: {}", e)))?),
+                None => None,
+            };
+            let inputs = serde_json::from_str(&inputs_str)
+                .map_err(|e| AetherError::DatabaseError(format!("Deserialize inputs failed: {}", e)))?;
+            let artifacts = serde_json::from_str(&artifacts_str)
+                .map_err(|e| AetherError::DatabaseError(format!("Deserialize artifacts failed: {}", e)))?;
+            let options = serde_json::from_str(&options_str)
+                .map_err(|e| AetherError::DatabaseError(format!("Deserialize options failed: {}", e)))?;
+
+            Ok(GenerationJob {
+                job_ref,
+                kind,
+                status,
+                requested_model,
+                resolved_model,
+                provider_job_id,
+                prompt,
+                inputs,
+                artifacts,
+                error,
+                created_at_ms: created_at_ms as u64,
+                updated_at_ms: updated_at_ms as u64,
+                options,
+            })
+        })
+    }
+
+    /// Invariant: must load and deserialize all GenerationJobs from the database.
+    pub fn load_all_generation_jobs(&self) -> Result<Vec<GenerationJob>, AetherError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT ref_id FROM generation_jobs"
+        ).map_err(|e| AetherError::DatabaseError(format!("Prepare generation jobs query failed: {}", e)))?;
+
+        let ref_iter = stmt.query_map([], |row| {
+            let ref_id_str: String = row.get(0)?;
+            Ok(ref_id_str)
+        }).map_err(|e| AetherError::DatabaseError(format!("Query generation jobs failed: {}", e)))?;
+
+        let mut jobs = Vec::new();
+        for item in ref_iter {
+            let ref_id_str = item
+                .map_err(|e| AetherError::DatabaseError(format!("Read generation job row failed: {}", e)))?;
+            let r = Ref::from_str(&ref_id_str)?;
+            let job = self.load_generation_job(&r)?;
+            jobs.push(job);
+        }
+
+        Ok(jobs)
+    }
+
+    /// Invariant: must delete the GenerationJob associated with the given Ref from the database.
+    pub fn delete_generation_job(&self, r: &Ref) -> Result<(), AetherError> {
+        self.conn.execute(
+            "DELETE FROM generation_jobs WHERE ref_id = ?1",
+            params![r.to_string()],
+        ).map_err(|e| AetherError::DatabaseError(format!("Delete generation job failed: {}", e)))?;
+        Ok(())
+    }
+
+    /// Invariant: This function must preserve the invariant that a new event is successfully recorded in the SQLite `generation_events` table matching the provided job reference, status, and message, or else it returns a structured `AetherError` on failure.
+    pub fn add_generation_event(&self, job_ref: &Ref, status: &GenerationStatus, message: &str) -> Result<(), AetherError> {
+        let job_ref_str = job_ref.to_string();
+        let status_str = serde_json::to_string(status)
+            .map_err(|e| AetherError::DatabaseError(format!("Serialize status failed: {}", e)))?;
+        let timestamp_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+
+        self.conn.execute(
+            "INSERT INTO generation_events (job_ref, status, message, timestamp_ms) VALUES (?1, ?2, ?3, ?4)",
+            params![
+                job_ref_str,
+                status_str,
+                message.to_string(),
+                timestamp_ms,
+            ],
+        ).map_err(|e| AetherError::DatabaseError(format!("Add generation event failed: {}", e)))?;
+
+        Ok(())
+    }
+
     /// Helper to get DB file path.
     pub fn db_path(&self) -> &Path {
         &self.db_path
@@ -600,7 +950,7 @@ impl DbManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aether_core::{RefKind, ProjectSettings, BlendMode};
+    use aether_core::{RefKind, ProjectSettings, BlendMode, GenerationArtifact, ProviderModel, GenerationKind, GenerationStatus};
 
     fn temp_db_dir() -> PathBuf {
         let unique_dir = format!("test_aether_{}", std::time::SystemTime::now()
@@ -617,9 +967,10 @@ mod tests {
         assert!(db.db_path().exists());
 
         // Check loaded default settings
-        let (settings, cursor) = db.load_settings().unwrap();
+        let (settings, branch, commit) = db.load_settings().unwrap();
         assert_eq!(settings, ProjectSettings::default());
-        assert_eq!(cursor, 0);
+        assert_eq!(branch, "main");
+        assert_eq!(commit, "");
 
         // Cleanup
         let _ = fs::remove_dir_all(&dir);
@@ -637,11 +988,12 @@ mod tests {
             colorspace: "rec2020".to_string(),
         };
 
-        db.save_settings(&new_settings, 5).unwrap();
+        db.save_settings(&new_settings, "main", "commit1").unwrap();
 
-        let (loaded_settings, cursor) = db.load_settings().unwrap();
+        let (loaded_settings, branch, commit) = db.load_settings().unwrap();
         assert_eq!(loaded_settings, new_settings);
-        assert_eq!(cursor, 5);
+        assert_eq!(branch, "main");
+        assert_eq!(commit, "commit1");
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -699,26 +1051,20 @@ mod tests {
             end: "00:05".to_string(),
         };
 
-        let id1 = db.add_history_entry(&cmd1, None, Some("hash_state_1")).unwrap();
-        let id2 = db.add_history_entry(&cmd2, Some("hash_state_1"), Some("hash_state_2")).unwrap();
+        db.add_history_entry("hash1", None, "main", &cmd1).unwrap();
+        db.add_history_entry("hash2", Some("hash1"), "main", &cmd2).unwrap();
 
         let history = db.load_history().unwrap();
         assert_eq!(history.len(), 2);
-        assert_eq!(history[0].0, id1);
-        assert_eq!(history[0].1, cmd1);
-        assert_eq!(history[0].2, None);
-        assert_eq!(history[0].3, Some("hash_state_1".to_string()));
+        assert_eq!(history[0].0, "hash1");
+        assert_eq!(history[0].1, None);
+        assert_eq!(history[0].2, "main");
+        assert_eq!(history[0].3, cmd1);
 
-        assert_eq!(history[1].0, id2);
-        assert_eq!(history[1].1, cmd2);
-        assert_eq!(history[1].2, Some("hash_state_1".to_string()));
-        assert_eq!(history[1].3, Some("hash_state_2".to_string()));
-
-        // Truncate history
-        db.truncate_history_after(id1).unwrap();
-        let history = db.load_history().unwrap();
-        assert_eq!(history.len(), 1);
-        assert_eq!(history[0].0, id1);
+        assert_eq!(history[1].0, "hash2");
+        assert_eq!(history[1].1, Some("hash1".to_string()));
+        assert_eq!(history[1].2, "main");
+        assert_eq!(history[1].3, cmd2);
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -781,6 +1127,65 @@ mod tests {
 
         let loaded = db.load_timeline().unwrap();
         assert_eq!(loaded, timeline);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_save_load_generation_jobs() {
+        let dir = temp_db_dir();
+        let db = DbManager::new(&dir).unwrap();
+
+        let job_ref = "@g1".parse::<Ref>().unwrap();
+        let job = GenerationJob {
+            job_ref,
+            kind: GenerationKind::Image,
+            status: GenerationStatus::Ready,
+            requested_model: Some("mock/image".to_string()),
+            resolved_model: Some(ProviderModel {
+                id: "mock/image".to_string(),
+                provider: "mock".to_string(),
+                kind: GenerationKind::Image,
+                enabled: true,
+                capabilities: serde_json::json!({}),
+            }),
+            provider_job_id: Some("mock-job-1".to_string()),
+            prompt: Some(aether_core::ProfessionalPrompt {
+                original_request: "a cat".to_string(),
+                professional_prompt: "a beautiful cat".to_string(),
+                negative_prompt: None,
+                locale: None,
+                style: None,
+                technical: serde_json::json!({}),
+            }),
+            inputs: Vec::new(),
+            artifacts: vec![GenerationArtifact {
+                kind: aether_core::GeneratedArtifactKind::Image,
+                path: PathBuf::from("/tmp/art.png"),
+                asset_ref: None,
+                mime_type: Some("image/png".to_string()),
+                metadata: serde_json::json!({}),
+            }],
+            error: None,
+            created_at_ms: 123456789,
+            updated_at_ms: 123456799,
+            options: serde_json::json!({}),
+        };
+
+        db.save_generation_job(&job).unwrap();
+
+        let loaded = db.load_generation_job(&job_ref).unwrap();
+        assert_eq!(loaded, job);
+
+        let all = db.load_all_generation_jobs().unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0], job);
+
+        db.add_generation_event(&job_ref, &GenerationStatus::Ready, "Test event log").unwrap();
+
+        db.delete_generation_job(&job_ref).unwrap();
+        let all_after = db.load_all_generation_jobs().unwrap();
+        assert!(all_after.is_empty());
 
         let _ = fs::remove_dir_all(&dir);
     }

@@ -191,6 +191,26 @@ pub enum AssetKind {
     Animation,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SmartObservation {
+    pub asset_ref: Ref,
+    pub asset_kind: AssetKind,
+    pub duration_sec: f32,
+    // Médias légers (Le Cerveau Droit)
+    pub proxy_video_path: Option<String>,
+    pub proxy_audio_path: Option<String>,
+    pub contact_sheet_path: Option<String>,
+    // Télémétrie absolue (Le Cerveau Gauche)
+    pub telemetry: TelemetryData,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TelemetryData {
+    pub anomalies: Vec<String>,
+    pub audio_peaks_sec: Vec<f32>, // Timestamps des beats/transients
+    pub rms_levels: Vec<f32>,
+}
+
 /// Metadata and path of a registered asset.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Asset {
@@ -232,6 +252,12 @@ impl RefRegistry {
         Ref { kind, id }
     }
 
+    /// Reserves the next reference of the specified kind without permanently registering it yet.
+    pub fn reserve_next(&self, kind: RefKind) -> Ref {
+        // Invariant: Reserves the next available Ref ID by allocating it; if the transaction rolls back, registry state restoration will reclaim it.
+        self.allocate(kind)
+    }
+
     /// Registers an asset to a specific reference.
     pub fn register(&self, r: Ref, asset: Asset) -> Result<(), AetherError> {
         let mut map = self.resolved.write().unwrap();
@@ -258,6 +284,29 @@ impl RefRegistry {
     pub fn list_assets(&self) -> Vec<Asset> {
         let map = self.resolved.read().unwrap();
         map.values().cloned().collect()
+    }
+
+    /// Returns a copy of the registry's current state (counters and resolved assets).
+    pub fn get_state(&self) -> (HashMap<RefKind, u32>, HashMap<Ref, Asset>) {
+        // Invariant: Returns a complete clone of the registry's internal counters and resolved assets map.
+        let mut counters_val = HashMap::new();
+        for (&kind, atom) in &self.counters {
+            counters_val.insert(kind, atom.load(Ordering::SeqCst));
+        }
+        let resolved_val = self.resolved.read().unwrap().clone();
+        (counters_val, resolved_val)
+    }
+
+    /// Overwrites the registry's state with the provided counters and resolved assets.
+    pub fn set_state(&self, state: (HashMap<RefKind, u32>, HashMap<Ref, Asset>)) {
+        // Invariant: Overwrites both the atomic counters and the resolved assets map with the provided state.
+        let (counters_val, resolved_val) = state;
+        for (kind, val) in counters_val {
+            if let Some(atom) = self.counters.get(&kind) {
+                atom.store(val, Ordering::SeqCst);
+            }
+        }
+        *self.resolved.write().unwrap() = resolved_val;
     }
 }
 
@@ -506,6 +555,102 @@ pub struct Timeline {
     pub tracks: Vec<Track>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum GenerationKind {
+    StoryboardScratch,
+    Dialogue,
+    Image,
+    ImageEdit,
+    Voice,
+    VoiceClone,
+    SceneAudio,
+    Music,
+    VideoText,
+    VideoFrame,
+    VideoIngredients,
+    VideoEdit,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GenerationStatus {
+    Queued,
+    Prompting,
+    Submitted,
+    Running,
+    Downloading,
+    Ready,
+    Failed,
+    Cancelled,
+    Recovering,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum GeneratedArtifactKind {
+    StoryboardJson,
+    DialogueJson,
+    Image,
+    Audio,
+    Music,
+    Video,
+    PromptJson,
+    MetadataJson,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProviderModel {
+    pub id: String,
+    pub provider: String,
+    pub kind: GenerationKind,
+    pub enabled: bool,
+    pub capabilities: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProfessionalPrompt {
+    pub original_request: String,
+    pub professional_prompt: String,
+    pub negative_prompt: Option<String>,
+    pub locale: Option<String>,
+    pub style: Option<String>,
+    pub technical: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GenerationRequest {
+    pub job_ref: Ref,
+    pub kind: GenerationKind,
+    pub user_request: String,
+    pub model: Option<String>,
+    pub inputs: Vec<Ref>,
+    pub options: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GenerationArtifact {
+    pub kind: GeneratedArtifactKind,
+    pub path: PathBuf,
+    pub asset_ref: Option<Ref>,
+    pub mime_type: Option<String>,
+    pub metadata: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GenerationJob {
+    pub job_ref: Ref,
+    pub kind: GenerationKind,
+    pub status: GenerationStatus,
+    pub requested_model: Option<String>,
+    pub resolved_model: Option<ProviderModel>,
+    pub provider_job_id: Option<String>,
+    pub prompt: Option<ProfessionalPrompt>,
+    pub inputs: Vec<Ref>,
+    pub artifacts: Vec<GenerationArtifact>,
+    pub error: Option<String>,
+    pub created_at_ms: u64,
+    pub updated_at_ms: u64,
+    pub options: serde_json::Value,
+}
+
 /// Condensed, LLM-friendly view of the project state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Snapshot {
@@ -515,6 +660,7 @@ pub struct Snapshot {
     pub history_cursor: usize,
     pub graph: CompositionGraph,
     pub timeline: Timeline,
+    pub generation_jobs: Vec<GenerationJob>,
 }
 
 /// Represents the executable Domain Specific Language commands.
@@ -628,6 +774,86 @@ pub enum Command {
     },
     ExportEdl {
         output_path: String,
+    },
+    // Creative Version Control
+    Branch {
+        name: String,
+    },
+    Checkout {
+        name: String,
+    },
+    GenerateStoryboardScratch {
+        request: String,
+        model: Option<String>,
+        options: serde_json::Value,
+    },
+    GenerateDialogue {
+        request: String,
+        model: Option<String>,
+        options: serde_json::Value,
+    },
+    GenerateImage {
+        request: String,
+        model: Option<String>,
+        inputs: Vec<Ref>,
+        options: serde_json::Value,
+    },
+    EditImage {
+        target: Ref,
+        request: String,
+        model: Option<String>,
+        options: serde_json::Value,
+    },
+    GenerateVoice {
+        text: String,
+        voice: Option<String>,
+        model: Option<String>,
+        options: serde_json::Value,
+    },
+    CloneVoice {
+        sample: Ref,
+        name: Option<String>,
+        model: Option<String>,
+        options: serde_json::Value,
+    },
+    GenerateSceneAudio {
+        request: String,
+        model: Option<String>,
+        options: serde_json::Value,
+    },
+    GenerateMusic {
+        request: String,
+        model: Option<String>,
+        options: serde_json::Value,
+    },
+    GenerateVideoFromText {
+        request: String,
+        model: Option<String>,
+        options: serde_json::Value,
+    },
+    GenerateVideoFromFrame {
+        frame: Ref,
+        request: String,
+        model: Option<String>,
+        options: serde_json::Value,
+    },
+    GenerateVideoFromIngredients {
+        inputs: Vec<Ref>,
+        request: String,
+        model: Option<String>,
+        options: serde_json::Value,
+    },
+    EditVideo {
+        target: Ref,
+        request: String,
+        model: Option<String>,
+        options: serde_json::Value,
+    },
+    GenerationStatus {
+        r: Option<Ref>,
+    },
+    CancelGeneration {
+        r: Ref,
     },
 }
 
@@ -796,6 +1022,49 @@ mod tests {
         let serialized = serde_json::to_string(&timeline).unwrap();
         let deserialized: Timeline = serde_json::from_str(&serialized).unwrap();
         assert_eq!(deserialized, timeline);
+    }
+
+    #[test]
+    fn test_generation_serde_roundtrip() {
+        let job_ref = "@g1".parse::<Ref>().unwrap();
+        let job = GenerationJob {
+            job_ref,
+            kind: GenerationKind::Image,
+            status: GenerationStatus::Ready,
+            requested_model: Some("mock/image".to_string()),
+            resolved_model: Some(ProviderModel {
+                id: "mock/image".to_string(),
+                provider: "mock".to_string(),
+                kind: GenerationKind::Image,
+                enabled: true,
+                capabilities: serde_json::json!({}),
+            }),
+            provider_job_id: Some("mock-job-1".to_string()),
+            prompt: Some(ProfessionalPrompt {
+                original_request: "a cat".to_string(),
+                professional_prompt: "a beautiful cat".to_string(),
+                negative_prompt: None,
+                locale: None,
+                style: None,
+                technical: serde_json::json!({}),
+            }),
+            inputs: Vec::new(),
+            artifacts: vec![GenerationArtifact {
+                kind: GeneratedArtifactKind::Image,
+                path: PathBuf::from("/tmp/art.png"),
+                asset_ref: None,
+                mime_type: Some("image/png".to_string()),
+                metadata: serde_json::json!({}),
+            }],
+            error: None,
+            created_at_ms: 123456789,
+            updated_at_ms: 123456799,
+            options: serde_json::json!({}),
+        };
+
+        let serialized = serde_json::to_string(&job).unwrap();
+        let deserialized: GenerationJob = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized, job);
     }
 }
 

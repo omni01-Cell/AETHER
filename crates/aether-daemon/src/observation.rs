@@ -269,3 +269,131 @@ fn is_black_frame(path: &Path) -> bool {
     }
     false
 }
+
+pub fn generate_video_proxy(
+    video_path: &Path,
+    output_path: &Path,
+) -> Result<PathBuf, AetherError> {
+    if !video_path.exists() {
+        return Err(AetherError::IoError(
+            video_path.to_string_lossy().to_string(),
+            "Source video file does not exist".to_string(),
+        ));
+    }
+
+    if let Some(parent) = output_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| AetherError::IoError(parent.to_string_lossy().to_string(), e.to_string()))?;
+    }
+
+    // Try first with timecode (BITC)
+    let font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf";
+    let vf_arg = format!(
+        "scale=-2:480,fps=15,drawtext=fontfile={}:text='%{{pts\\:hms}}':x=(w-tw)/2:y=h-th-10:fontsize=36:fontcolor=white:box=1:boxcolor=black@0.5",
+        font_path
+    );
+
+    let status = std::process::Command::new("ffmpeg")
+        .arg("-i")
+        .arg(video_path)
+        .arg("-vf")
+        .arg(&vf_arg)
+        .arg(output_path)
+        .arg("-y")
+        .status();
+
+    match status {
+        Ok(s) if s.success() && output_path.exists() => Ok(output_path.to_path_buf()),
+        _ => {
+            // Fallback: simple proxy without timecode
+            let fallback_status = std::process::Command::new("ffmpeg")
+                .arg("-i")
+                .arg(video_path)
+                .arg("-vf")
+                .arg("scale=-2:480,fps=15")
+                .arg(output_path)
+                .arg("-y")
+                .status();
+
+            match fallback_status {
+                Ok(s) if s.success() && output_path.exists() => Ok(output_path.to_path_buf()),
+                Ok(_) => Err(AetherError::MediaError("FFmpeg fallback execution failed".to_string())),
+                Err(e) => Err(AetherError::MediaError(format!("Failed to run FFmpeg fallback: {}", e))),
+            }
+        }
+    }
+}
+
+pub fn generate_audio_proxy(
+    source_path: &Path,
+    output_path: &Path,
+) -> Result<PathBuf, AetherError> {
+    if !source_path.exists() {
+        return Err(AetherError::IoError(
+            source_path.to_string_lossy().to_string(),
+            "Source media file does not exist".to_string(),
+        ));
+    }
+
+    if let Some(parent) = output_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| AetherError::IoError(parent.to_string_lossy().to_string(), e.to_string()))?;
+    }
+
+    let status = std::process::Command::new("ffmpeg")
+        .arg("-i")
+        .arg(source_path)
+        .arg("-vn")
+        .arg("-c:a")
+        .arg("libmp3lame")
+        .arg("-b:a")
+        .arg("128k")
+        .arg(output_path)
+        .arg("-y")
+        .status();
+
+    match status {
+        Ok(s) if s.success() && output_path.exists() => Ok(output_path.to_path_buf()),
+        Ok(_) => Err(AetherError::MediaError("FFmpeg audio proxy generation failed".to_string())),
+        Err(e) => Err(AetherError::MediaError(format!("Failed to run FFmpeg for audio proxy: {}", e))),
+    }
+}
+
+pub fn detect_audio_transients(rms: &[f32], fps: f32) -> Vec<f32> {
+    let mut transients = Vec::new();
+    if rms.is_empty() || fps <= 0.0 {
+        return transients;
+    }
+
+    for i in 0..rms.len() {
+        let val = rms[i];
+        if val > 0.1 {
+            let start = if i >= 5 { i - 5 } else { 0 };
+            let count = i - start;
+            if count > 0 {
+                let sum: f32 = rms[start..i].iter().sum();
+                let avg = sum / count as f32;
+                if val >= avg * 1.5 {
+                    transients.push(i as f32 / fps);
+                }
+            }
+        }
+    }
+    transients
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_detect_audio_transients_simple() {
+        let rms = vec![0.01, 0.01, 0.8, 0.05, 0.02];
+        let transients = detect_audio_transients(&rms, 10.0);
+        assert_eq!(transients.len(), 1);
+        assert!((transients[0] - 0.2).abs() < 1e-5);
+    }
+}
+
+
+

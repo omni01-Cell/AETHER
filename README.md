@@ -21,7 +21,8 @@ This project is a Cargo Workspace composed of the following crates under `crates
 - [`aether-core`](crates/aether-core/): Shareable types (Refs, Snapshot, Command structures, errors).
 - [`aether-cli`](crates/aether-cli/): Lightweight CLI wrapper and interactive REPL shell.
 - [`aether-daemon`](crates/aether-daemon/): Long-running daemon maintaining the project state and executing rendering tasks.
-- [`aether-persistence`](crates/aether-persistence/): SQLite database storage and JSON state serializer.
+- [`aether-persistence`](crates/aether-persistence/): SQLite database storage, job event logger, and JSON state serializer.
+- [`aether-generate`](crates/aether-generate/): Generative AI layer with model registry, rule-based prompt enricher, and mock provider capabilities.
 - [`aether-video`](crates/aether-video/): High performance video decoder, cutter, and encoder.
 - [`aether-audio`](crates/aether-audio/): High precision audio processing and DSP rack.
 - [`aether-image`](crates/aether-image/): Image manipulation, drawing canvas, and vector parser.

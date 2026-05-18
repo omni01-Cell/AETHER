@@ -1,0 +1,15 @@
+[package]
+name = "aether-generate"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aether-core = { path = "../aether-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+blake3 = { workspace = true }
+async-trait = { workspace = true }
+uuid = { workspace = true }

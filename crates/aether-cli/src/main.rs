@@ -40,10 +40,76 @@ fn tokenize(line: &str) -> Result<Vec<String>, String> {
 }
 
 pub fn parse_dsl(line: &str) -> Result<Command, String> {
-    let tokens = tokenize(line)?;
+    let mut tokens = tokenize(line)?;
     if tokens.is_empty() {
         return Err("Empty command".to_string());
     }
+
+    // Pre-process two-word command tokens into canonical single tokens
+    if tokens.len() >= 2 {
+        let first = tokens[0].to_lowercase();
+        let second = tokens[1].to_lowercase();
+        match (first.as_str(), second.as_str()) {
+            ("generate", "storyboard-scratch") | ("generate", "storyboard_scratch") => {
+                tokens[0] = "generate_storyboard_scratch".to_string();
+                tokens.remove(1);
+            }
+            ("generate", "dialogue") => {
+                tokens[0] = "generate_dialogue".to_string();
+                tokens.remove(1);
+            }
+            ("generate", "image") => {
+                tokens[0] = "generate_image".to_string();
+                tokens.remove(1);
+            }
+            ("edit", "image") => {
+                tokens[0] = "edit_image".to_string();
+                tokens.remove(1);
+            }
+            ("generate", "voice") => {
+                tokens[0] = "generate_voice".to_string();
+                tokens.remove(1);
+            }
+            ("clone", "voice") => {
+                tokens[0] = "clone_voice".to_string();
+                tokens.remove(1);
+            }
+            ("generate", "scene-audio") | ("generate", "scene_audio") => {
+                tokens[0] = "generate_scene_audio".to_string();
+                tokens.remove(1);
+            }
+            ("generate", "music") => {
+                tokens[0] = "generate_music".to_string();
+                tokens.remove(1);
+            }
+            ("generate", "video-text") | ("generate", "video_text") | ("generate", "video") => {
+                tokens[0] = "generate_video".to_string();
+                tokens.remove(1);
+            }
+            ("generate", "video-frame") | ("generate", "video_frame") => {
+                tokens[0] = "generate_video_frame".to_string();
+                tokens.remove(1);
+            }
+            ("generate", "video-ingredients") | ("generate", "video_ingredients") => {
+                tokens[0] = "generate_video_ingredients".to_string();
+                tokens.remove(1);
+            }
+            ("edit", "video") => {
+                tokens[0] = "edit_video".to_string();
+                tokens.remove(1);
+            }
+            ("generation", "status") => {
+                tokens[0] = "generation_status".to_string();
+                tokens.remove(1);
+            }
+            ("generation", "cancel") => {
+                tokens[0] = "cancel_generation".to_string();
+                tokens.remove(1);
+            }
+            _ => {}
+        }
+    }
+
     let cmd_name = tokens[0].to_lowercase();
     match cmd_name.as_str() {
         "init" => {
@@ -111,6 +177,105 @@ pub fn parse_dsl(line: &str) -> Result<Command, String> {
             let quality = tokens.get(4).cloned().unwrap_or_else(|| "high".to_string());
             Ok(Command::Export { r, format, codec, quality })
         }
+        "inspect" => {
+            let r_str = tokens.get(1).ok_or("Missing reference for inspect")?;
+            let r = r_str.parse::<aether_core::Ref>().map_err(|e| e.to_string())?;
+            let start = tokens.get(2).cloned();
+            let end = tokens.get(3).cloned();
+            Ok(Command::Inspect { r: Some(r), start, end })
+        }
+        "generate_storyboard_scratch" | "storyboard_scratch" => {
+            let request = tokens.get(1).ok_or("Missing request prompt")?.clone();
+            let model = tokens.get(2).cloned();
+            Ok(Command::GenerateStoryboardScratch { request, model, options: serde_json::json!({}) })
+        }
+        "generate_dialogue" | "dialogue" => {
+            let request = tokens.get(1).ok_or("Missing request prompt")?.clone();
+            let model = tokens.get(2).cloned();
+            Ok(Command::GenerateDialogue { request, model, options: serde_json::json!({}) })
+        }
+        "generate_image" | "image" => {
+            let request = tokens.get(1).ok_or("Missing request prompt")?.clone();
+            let model = tokens.get(2).cloned();
+            Ok(Command::GenerateImage { request, model, inputs: Vec::new(), options: serde_json::json!({}) })
+        }
+        "edit_image" => {
+            let target_str = tokens.get(1).ok_or("Missing target image reference")?;
+            let target = target_str.parse::<aether_core::Ref>().map_err(|e| e.to_string())?;
+            let request = tokens.get(2).ok_or("Missing edit request prompt")?.clone();
+            let model = tokens.get(3).cloned();
+            Ok(Command::EditImage { target, request, model, options: serde_json::json!({}) })
+        }
+        "generate_voice" | "voice" => {
+            let text = tokens.get(1).ok_or("Missing text for voice generation")?.clone();
+            let voice = tokens.get(2).cloned();
+            let model = tokens.get(3).cloned();
+            Ok(Command::GenerateVoice { text, voice, model, options: serde_json::json!({}) })
+        }
+        "clone_voice" => {
+            let sample_str = tokens.get(1).ok_or("Missing voice sample reference")?;
+            let sample = sample_str.parse::<aether_core::Ref>().map_err(|e| e.to_string())?;
+            let name = tokens.get(2).cloned();
+            let model = tokens.get(3).cloned();
+            Ok(Command::CloneVoice { sample, name, model, options: serde_json::json!({}) })
+        }
+        "generate_scene_audio" | "scene_audio" => {
+            let request = tokens.get(1).ok_or("Missing scene audio description")?.clone();
+            let model = tokens.get(2).cloned();
+            Ok(Command::GenerateSceneAudio { request, model, options: serde_json::json!({}) })
+        }
+        "generate_music" | "music" => {
+            let request = tokens.get(1).ok_or("Missing music description")?.clone();
+            let model = tokens.get(2).cloned();
+            Ok(Command::GenerateMusic { request, model, options: serde_json::json!({}) })
+        }
+        "generate_video" | "video" => {
+            let request = tokens.get(1).ok_or("Missing video description")?.clone();
+            let model = tokens.get(2).cloned();
+            Ok(Command::GenerateVideoFromText { request, model, options: serde_json::json!({}) })
+        }
+        "generate_video_frame" | "video_frame" => {
+            let frame_str = tokens.get(1).ok_or("Missing frame reference")?;
+            let frame = frame_str.parse::<aether_core::Ref>().map_err(|e| e.to_string())?;
+            let request = tokens.get(2).ok_or("Missing animation prompt")?.clone();
+            let model = tokens.get(3).cloned();
+            Ok(Command::GenerateVideoFromFrame { frame, request, model, options: serde_json::json!({}) })
+        }
+        "generate_video_ingredients" => {
+            // Find `--prompt`
+            let prompt_idx = tokens.iter().position(|t| t == "--prompt")
+                .ok_or("Missing --prompt flag for video ingredients generation")?;
+            if prompt_idx < 1 {
+                return Err("Missing input references for video ingredients".to_string());
+            }
+            let mut inputs = Vec::new();
+            for token in &tokens[1..prompt_idx] {
+                let r = token.parse::<aether_core::Ref>().map_err(|e| e.to_string())?;
+                inputs.push(r);
+            }
+            let request = tokens.get(prompt_idx + 1).ok_or("Missing prompt request after --prompt")?.clone();
+            let model = tokens.get(prompt_idx + 2).cloned();
+            Ok(Command::GenerateVideoFromIngredients { inputs, request, model, options: serde_json::json!({}) })
+        }
+        "edit_video" => {
+            let target_str = tokens.get(1).ok_or("Missing target video reference to edit")?;
+            let target = target_str.parse::<aether_core::Ref>().map_err(|e| e.to_string())?;
+            let request = tokens.get(2).ok_or("Missing edit request prompt")?.clone();
+            let model = tokens.get(3).cloned();
+            Ok(Command::EditVideo { target, request, model, options: serde_json::json!({}) })
+        }
+        "generation_status" | "status" => {
+            let r = match tokens.get(1) {
+                Some(s) => Some(s.parse::<aether_core::Ref>().map_err(|e| e.to_string())?),
+                None => None,
+            };
+            Ok(Command::GenerationStatus { r })
+        }
+        "cancel_generation" | "cancel" => {
+            let r_str = tokens.get(1).ok_or("Missing generation reference to cancel")?;
+            let r = r_str.parse::<aether_core::Ref>().map_err(|e| e.to_string())?;
+            Ok(Command::CancelGeneration { r })
+        }
         "undo" => Ok(Command::Undo),
         "redo" => Ok(Command::Redo),
         "snapshot" => Ok(Command::Snapshot),
@@ -171,6 +336,12 @@ fn print_snapshot(snap: &Snapshot) {
     println!("Registered Assets ({}):", snap.assets.len());
     for asset in &snap.assets {
         println!("  - {} [{:?}] path={}", asset.r, asset.kind, asset.path.to_string_lossy());
+    }
+    println!("Active/Completed Generation Jobs ({}):", snap.generation_jobs.len());
+    for job in &snap.generation_jobs {
+        println!("  - {} [{:?}] status={:?} model={:?}",
+            job.job_ref, job.kind, job.status, job.resolved_model.as_ref().map(|m| &m.id)
+        );
     }
 }
 
@@ -245,6 +416,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         println!("  canvas <width> <height> <color>");
                         println!("  draw_text <ref> \"<text>\" <font> <size> <x> <y>");
                         println!("  export <ref> <format> [<codec>] [<quality>]");
+                        println!("  inspect <ref> [<start>] [<end>]");
+                        println!("  generate storyboard-scratch \"<prompt>\"");
+                        println!("  generate dialogue \"<prompt>\"");
+                        println!("  generate image \"<prompt>\"");
+                        println!("  edit image <image_ref> \"<prompt>\"");
+                        println!("  generate voice \"<text>\"");
+                        println!("  clone voice <audio_ref>");
+                        println!("  generate scene-audio \"<prompt>\"");
+                        println!("  generate music \"<prompt>\"");
+                        println!("  generate video \"<prompt>\"");
+                        println!("  generate video-frame <image_ref> \"<prompt>\"");
+                        println!("  generate video-ingredients <refs...> --prompt \"<prompt>\"");
+                        println!("  edit video <video_ref> \"<prompt>\"");
+                        println!("  generation status [<gen_ref>]");
+                        println!("  generation cancel <gen_ref>");
                         println!("  undo");
                         println!("  redo");
                         println!("  snapshot");
@@ -334,5 +520,39 @@ mod tests {
             height: 480,
             color: "green".to_string()
         });
+    }
+
+    #[test]
+    fn test_parser_generative_commands() {
+        let cmd = parse_dsl("image \"A cute kitten\" mock/image").unwrap();
+        assert!(matches!(cmd, Command::GenerateImage { .. }));
+
+        let cmd2 = parse_dsl("status @g123").unwrap();
+        assert!(matches!(cmd2, Command::GenerationStatus { .. }));
+
+        let cmd3 = parse_dsl("cancel @g123").unwrap();
+        assert!(matches!(cmd3, Command::CancelGeneration { .. }));
+
+        // Two-word aligned grammar tests
+        let cmd4 = parse_dsl("generate storyboard-scratch \"test prompt\"").unwrap();
+        assert!(matches!(cmd4, Command::GenerateStoryboardScratch { .. }));
+
+        let cmd5 = parse_dsl("generate image \"test prompt\"").unwrap();
+        assert!(matches!(cmd5, Command::GenerateImage { .. }));
+
+        let cmd6 = parse_dsl("edit image @img1 \"test prompt\"").unwrap();
+        assert!(matches!(cmd6, Command::EditImage { .. }));
+
+        let cmd7 = parse_dsl("generate video-ingredients @img1 @a1 --prompt \"test prompt\"").unwrap();
+        assert!(matches!(cmd7, Command::GenerateVideoFromIngredients { .. }));
+
+        let cmd8 = parse_dsl("edit video @v1 \"test prompt\"").unwrap();
+        assert!(matches!(cmd8, Command::EditVideo { .. }));
+
+        let cmd9 = parse_dsl("generation status @g1").unwrap();
+        assert!(matches!(cmd9, Command::GenerationStatus { .. }));
+
+        let cmd10 = parse_dsl("generation cancel @g1").unwrap();
+        assert!(matches!(cmd10, Command::CancelGeneration { .. }));
     }
 }
