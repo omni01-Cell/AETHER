@@ -454,3 +454,126 @@ impl ProjectManager {
         )))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use aether_core::ProjectStatus;
+
+    fn setup_test_manager(test_name: &str) -> (ProjectManager, PathBuf, PathBuf) {
+        // Build path relative to the manifest directory (inside target/test_projects/)
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let workspace_root = manifest_dir.parent().unwrap().parent().unwrap().to_path_buf();
+        let test_dir = workspace_root
+            .join("target")
+            .join("test_projects")
+            .join(test_name);
+
+        // Ensure a clean test directory
+        if test_dir.exists() {
+            let _ = fs::remove_dir_all(&test_dir);
+        }
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let registry_path = test_dir.join("projects.json");
+        let mock_home = test_dir.join("mock_home");
+        fs::create_dir_all(&mock_home).unwrap();
+        
+        // Mock HOME so trash archiving stays within the workspace target folder!
+        std::env::set_var("HOME", &mock_home);
+
+        (ProjectManager::with_registry_path(registry_path), test_dir, mock_home)
+    }
+
+    #[test]
+    fn test_project_lifecycle() {
+        let (pm, test_dir, mock_home) = setup_test_manager("test_project_lifecycle");
+
+        let p1_dir = test_dir.join("p1");
+
+        // 1. Create project
+        let spec = ProjectCreateSpec {
+            name: "project1".to_string(),
+            dir: Some(p1_dir.clone()),
+            adopt: false,
+            force: false,
+        };
+        let meta1 = pm.create(spec).expect("Failed to create project1");
+        assert_eq!(meta1.name, "project1");
+        assert!(p1_dir.join(".aether").exists());
+        assert!(p1_dir.join(".aether/project.json").exists());
+        assert!(p1_dir.join(".aether/metadata.db").exists());
+
+        // Check registry
+        let registry = pm.load_registry().unwrap();
+        assert_eq!(registry.active_project_id, Some(meta1.project_id.clone()));
+        assert_eq!(registry.projects.len(), 1);
+        assert_eq!(registry.projects[0].name, "project1");
+        assert_eq!(registry.projects[0].status, ProjectStatus::Open);
+
+        // 2. Resolve context
+        let resolved = pm.resolve_for_command(None).unwrap();
+        assert_eq!(fs::canonicalize(resolved).unwrap(), fs::canonicalize(&p1_dir).unwrap());
+
+        // 3. Close project
+        pm.close(None).expect("Failed to close active project");
+        let registry = pm.load_registry().unwrap();
+        assert_eq!(registry.active_project_id, None);
+        assert_eq!(registry.projects[0].status, ProjectStatus::Closed);
+
+        // Resolve context should fail when closed and no active project
+        let err = pm.resolve_for_command(None).unwrap_err();
+        assert!(err.to_string().contains("No active AETHER project"));
+
+        // 4. Reopen project
+        let meta_opened = pm.open("project1").expect("Failed to open project1");
+        assert_eq!(meta_opened.project_id, meta1.project_id);
+        let registry = pm.load_registry().unwrap();
+        assert_eq!(registry.active_project_id, Some(meta1.project_id.clone()));
+        assert_eq!(registry.projects[0].status, ProjectStatus::Open);
+
+        // 5. Create a second project
+        let p2_dir = test_dir.join("p2");
+        let spec2 = ProjectCreateSpec {
+            name: "project2".to_string(),
+            dir: Some(p2_dir.clone()),
+            adopt: false,
+            force: false,
+        };
+        let meta2 = pm.create(spec2).expect("Failed to create project2");
+        assert_eq!(meta2.name, "project2");
+
+        let registry = pm.load_registry().unwrap();
+        assert_eq!(registry.projects.len(), 2);
+        assert_eq!(registry.active_project_id, Some(meta2.project_id.clone()));
+
+        // Resolve context should return project2
+        let resolved = pm.resolve_for_command(None).unwrap();
+        assert_eq!(fs::canonicalize(resolved).unwrap(), fs::canonicalize(&p2_dir).unwrap());
+
+        // Switch to project1
+        pm.open("project1").expect("Failed to switch to project1");
+        let resolved = pm.resolve_for_command(None).unwrap();
+        assert_eq!(fs::canonicalize(resolved).unwrap(), fs::canonicalize(&p1_dir).unwrap());
+
+        // 6. Delete project2 via Archive
+        pm.delete("project2", DeleteMode::Archive).expect("Failed to archive project2");
+        let registry = pm.load_registry().unwrap();
+        assert_eq!(registry.projects.len(), 1);
+        assert_eq!(registry.projects[0].name, "project1");
+        // Verify it was moved to trash inside our mock_home workspace directory
+        let trash_dir = mock_home.join(".local/share/aether/trash");
+        assert!(trash_dir.exists());
+        let archived_p2 = trash_dir.join(format!("project2-{}", meta2.project_id));
+        assert!(archived_p2.exists());
+        assert!(archived_p2.join(".aether/project.json").exists());
+
+        // 7. Delete project1 via Force
+        pm.delete("project1", DeleteMode::Force).expect("Failed to force delete project1");
+        let registry = pm.load_registry().unwrap();
+        assert_eq!(registry.projects.len(), 0);
+        assert_eq!(registry.active_project_id, None);
+        assert!(!p1_dir.exists());
+    }
+}

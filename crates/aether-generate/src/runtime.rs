@@ -45,15 +45,60 @@ where
                 ))
             })?;
 
-        // 2. Prompt Making
+        // 2. Prompt Context and Security Validation
         let locale = request.options.get("locale").and_then(|v| v.as_str()).map(String::from);
         let style_hint = request.options.get("style").and_then(|v| v.as_str()).map(String::from);
         let project_summary = request.options.get("project_summary").and_then(|v| v.as_str()).map(String::from);
+
+        let vault_context = request
+            .options
+            .get("vault_context")
+            .cloned()
+            .and_then(|v| serde_json::from_value::<aether_core::PromptContext>(v).ok());
+
+        // Safety validation of restricted vault assets against provider
+        if let Some(ref vc) = vault_context {
+            for v_ctx in &vc.vault_context {
+                for asset in &v_ctx.reference_assets {
+                    if let serde_json::Value::Object(ref meta) = asset.metadata {
+                        if meta.get("restricted").and_then(|r| r.as_bool()).unwrap_or(false) {
+                            // Check allowed_providers
+                            if let Some(allowed) = meta.get("allowed_providers").and_then(|a| a.as_array()) {
+                                let allowed_str: Vec<String> = allowed
+                                    .iter()
+                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                    .collect();
+                                if !allowed_str.contains(&resolved_model.provider) {
+                                    return Err(AetherError::OperationFailed(format!(
+                                        "Security violation: Vault asset '{}' is restricted and not allowed on provider '{}'",
+                                        asset.name, resolved_model.provider
+                                    )));
+                                }
+                            }
+                            // Check disallowed_providers
+                            if let Some(disallowed) = meta.get("disallowed_providers").and_then(|d| d.as_array()) {
+                                let disallowed_str: Vec<String> = disallowed
+                                    .iter()
+                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                    .collect();
+                                if disallowed_str.contains(&resolved_model.provider) {
+                                    return Err(AetherError::OperationFailed(format!(
+                                        "Security violation: Vault asset '{}' is restricted and disallowed on provider '{}'",
+                                        asset.name, resolved_model.provider
+                                    )));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         let context = PromptMakerContext {
             project_summary,
             locale,
             style_hint,
+            vault_context,
         };
 
         let prompt = self

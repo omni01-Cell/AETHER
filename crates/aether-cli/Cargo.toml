@@ -6,6 +6,8 @@ edition = "2021"
 [dependencies]
 aether-core = { path = "../aether-core" }
 aether-project = { path = "../aether-project" }
+aether-vault = { path = "../aether-vault" }
+aether-planner = { path = "../aether-planner" }
 clap = { workspace = true, features = ["derive"] }
 rustyline = { workspace = true }
 tokio = { workspace = true, features = ["full"] }

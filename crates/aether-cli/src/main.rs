@@ -131,6 +131,62 @@ pub fn parse_dsl(line: &str) -> Result<Command, String> {
                 tokens[0] = "project_delete".to_string();
                 tokens.remove(1);
             }
+            ("vault", "create") => {
+                tokens[0] = "vault_create".to_string();
+                tokens.remove(1);
+            }
+            ("vault", "list") => {
+                tokens[0] = "vault_list".to_string();
+                tokens.remove(1);
+            }
+            ("vault", "show") => {
+                tokens[0] = "vault_show".to_string();
+                tokens.remove(1);
+            }
+            ("vault", "add") => {
+                tokens[0] = "vault_add".to_string();
+                tokens.remove(1);
+            }
+            ("vault", "attach") => {
+                tokens[0] = "vault_attach".to_string();
+                tokens.remove(1);
+            }
+            ("vault", "detach") => {
+                tokens[0] = "vault_detach".to_string();
+                tokens.remove(1);
+            }
+            ("vault", "attached") => {
+                tokens[0] = "vault_attached".to_string();
+                tokens.remove(1);
+            }
+            ("plan", "create") => {
+                tokens[0] = "plan_create".to_string();
+                tokens.remove(1);
+            }
+            ("plan", "show") => {
+                tokens[0] = "plan_show".to_string();
+                tokens.remove(1);
+            }
+            ("plan", "revise") => {
+                tokens[0] = "plan_revise".to_string();
+                tokens.remove(1);
+            }
+            ("plan", "next") => {
+                tokens[0] = "plan_next".to_string();
+                tokens.remove(1);
+            }
+            ("plan", "check") => {
+                tokens[0] = "plan_check".to_string();
+                tokens.remove(1);
+            }
+            ("plan", "uncheck") => {
+                tokens[0] = "plan_uncheck".to_string();
+                tokens.remove(1);
+            }
+            ("plan", "status") => {
+                tokens[0] = "plan_status".to_string();
+                tokens.remove(1);
+            }
             _ => {}
         }
     }
@@ -366,6 +422,154 @@ pub fn parse_dsl(line: &str) -> Result<Command, String> {
             }
             Ok(Command::ProjectDelete { target, force, archive })
         }
+                "vault_create" => {
+            let name = tokens.get(1).ok_or("Missing vault name")?.clone();
+            let mut kind = aether_core::VaultKind::General;
+            let mut description = None;
+            
+            let mut i = 2;
+            while i < tokens.len() {
+                match tokens[i].as_str() {
+                    "--kind" => {
+                        let k_str = tokens.get(i + 1).ok_or("Missing value for --kind")?;
+                        kind = k_str.parse::<aether_core::VaultKind>().map_err(|e| e.to_string())?;
+                        i += 2;
+                    }
+                    "--description" => {
+                        description = Some(tokens.get(i + 1).ok_or("Missing value for --description")?.clone());
+                        i += 2;
+                    }
+                    other => return Err(format!("Unknown flag '{}' for vault create", other)),
+                }
+            }
+            Ok(Command::VaultCreate { name, kind, description })
+        }
+        "vault_list" => {
+            Ok(Command::VaultList)
+        }
+        "vault_show" => {
+            let vault_id = tokens.get(1).ok_or("Missing vault ID")?.clone();
+            Ok(Command::VaultShow { vault_id })
+        }
+        "vault_add" => {
+            let vault_id = tokens.get(1).ok_or("Missing vault ID")?.clone();
+            let asset_name = tokens.get(2).ok_or("Missing asset name")?.clone();
+            
+            let mut source_file = None;
+            let mut text_content = None;
+            let mut asset_kind = None;
+            let mut usage = Vec::new();
+            let mut tags = Vec::new();
+            let mut metadata = serde_json::json!({});
+            
+            let mut i = 3;
+            while i < tokens.len() {
+                match tokens[i].as_str() {
+                    "--file" => {
+                        let val = tokens.get(i + 1).ok_or("Missing value for --file")?;
+                        source_file = Some(PathBuf::from(val));
+                        i += 2;
+                    }
+                    "--text" => {
+                        let val = tokens.get(i + 1).ok_or("Missing value for --text")?;
+                        text_content = Some(val.clone());
+                        i += 2;
+                    }
+                    "--type" => {
+                        let val = tokens.get(i + 1).ok_or("Missing value for --type")?;
+                        asset_kind = Some(val.parse::<aether_core::VaultAssetKind>().map_err(|e| e.to_string())?);
+                        i += 2;
+                    }
+                    "--usage" => {
+                        let val = tokens.get(i + 1).ok_or("Missing value for --usage")?;
+                        for u in val.split(',') {
+                            usage.push(u.parse::<aether_core::VaultUsage>().map_err(|e| e.to_string())?);
+                        }
+                        i += 2;
+                    }
+                    "--tags" => {
+                        let val = tokens.get(i + 1).ok_or("Missing value for --tags")?;
+                        for t in val.split(',') {
+                            tags.push(t.to_string());
+                        }
+                        i += 2;
+                    }
+                    "--meta" => {
+                        let val = tokens.get(i + 1).ok_or("Missing value for --meta")?;
+                        let json_str = val.replace('\'', "\"");
+                        metadata = serde_json::from_str(&json_str).map_err(|e| format!("Invalid metadata JSON: {}", e))?;
+                        i += 2;
+                    }
+                    other => return Err(format!("Unknown flag '{}' for vault add", other)),
+                }
+            }
+            let asset_kind = asset_kind.ok_or("Missing mandatory parameter --type")?;
+            Ok(Command::VaultAdd {
+                vault_id,
+                asset_name,
+                asset_kind,
+                source_file,
+                text_content,
+                usage,
+                tags,
+                metadata,
+            })
+        }
+        "vault_attach" => {
+            let vault_id = tokens.get(1).ok_or("Missing vault ID")?.clone();
+            let mut alias = "default".to_string();
+            if let Some(pos) = tokens.iter().position(|t| t == "--alias") {
+                alias = tokens.get(pos + 1).ok_or("Missing value for --alias")?.clone();
+            }
+            Ok(Command::VaultAttach { vault_id, alias })
+        }
+        "vault_detach" => {
+            let vault_id = tokens.get(1).ok_or("Missing vault ID")?.clone();
+            Ok(Command::VaultDetach { vault_id })
+        }
+        "vault_attached" => {
+            Ok(Command::VaultAttached)
+        }
+        "plan_create" => {
+            let objective = tokens.get(1).ok_or("Missing plan objective")?.clone();
+            let mut plan_json = None;
+            if let Some(pos) = tokens.iter().position(|t| t == "--json") {
+                plan_json = Some(tokens.get(pos + 1).ok_or("Missing value for --json")?.clone());
+            }
+            Ok(Command::PlanCreate { objective, plan_json })
+        }
+        "plan_show" => {
+            let plan_id = tokens.get(1).ok_or("Missing plan ID")?.clone();
+            Ok(Command::PlanShow { plan_id })
+        }
+        "plan_revise" => {
+            let plan_id = tokens.get(1).ok_or("Missing plan ID")?.clone();
+            let instruction = tokens.get(2).ok_or("Missing revision instruction")?.clone();
+            Ok(Command::PlanRevise { plan_id, instruction })
+        }
+        "plan_next" => {
+            let plan_id = tokens.get(1).ok_or("Missing plan ID")?.clone();
+            Ok(Command::PlanNext { plan_id })
+        }
+        "plan_check" => {
+            let plan_id = tokens.get(1).ok_or("Missing plan ID")?.clone();
+            let step_id = tokens.get(2).ok_or("Missing step ID")?.clone();
+            let mut evidence_ref = None;
+            if let Some(pos) = tokens.iter().position(|t| t == "--evidence") {
+                let r_str = tokens.get(pos + 1).ok_or("Missing value for --evidence")?;
+                evidence_ref = Some(r_str.parse::<aether_core::Ref>().map_err(|e| e.to_string())?);
+            }
+            Ok(Command::PlanCheck { plan_id, step_id, evidence_ref })
+        }
+        "plan_uncheck" => {
+            let plan_id = tokens.get(1).ok_or("Missing plan ID")?.clone();
+            let step_id = tokens.get(2).ok_or("Missing step ID")?.clone();
+            Ok(Command::PlanUncheck { plan_id, step_id })
+        }
+        "plan_status" => {
+            let plan_id = tokens.get(1).ok_or("Missing plan ID")?.clone();
+            Ok(Command::PlanStatus { plan_id })
+        }
         "shutdown" => {
             Ok(Command::Shutdown)
         }
@@ -503,12 +707,198 @@ async fn execute_local_command(cmd: Command) -> Result<(), Box<dyn std::error::E
                 Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to delete project: {}", e),
             }
         }
+        Command::VaultCreate { name, kind, description } => {
+            let vm = aether_vault::VaultManager::load_default()?;
+            match vm.create_vault(&name, kind, description) {
+                Ok(vault) => {
+                    println!("\x1b[32mSuccess:\x1b[0m Created Vault '{}'", vault.name);
+                    println!("{}", serde_json::to_string_pretty(&vault)?);
+                }
+                Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to create Vault: {}", e),
+            }
+        }
+        Command::VaultList => {
+            let vm = aether_vault::VaultManager::load_default()?;
+            match vm.load_registry() {
+                Ok(vaults) => {
+                    println!("Registered AETHER Vaults:");
+                    println!("{}", serde_json::to_string_pretty(&vaults)?);
+                }
+                Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to list Vaults: {}", e),
+            }
+        }
+        Command::VaultShow { vault_id } => {
+            let vm = aether_vault::VaultManager::load_default()?;
+            match vm.load_registry() {
+                Ok(vaults) => {
+                    if let Some(vault) = vaults.iter().find(|v| v.vault_id == vault_id) {
+                        println!("Vault Details:");
+                        println!("{}", serde_json::to_string_pretty(&vault)?);
+                        match vm.load_assets(&vault_id) {
+                            Ok(assets) => {
+                                println!("\nAssets in Vault ({}):", assets.len());
+                                println!("{}", serde_json::to_string_pretty(&assets)?);
+                            }
+                            Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to load assets: {}", e),
+                        }
+                    } else {
+                        eprintln!("\x1b[31mError:\x1b[0m Vault '{}' not found", vault_id);
+                    }
+                }
+                Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to load registry: {}", e),
+            }
+        }
+        Command::VaultAdd {
+            vault_id,
+            asset_name,
+            asset_kind,
+            source_file,
+            text_content,
+            usage,
+            tags,
+            metadata,
+        } => {
+            let vm = aether_vault::VaultManager::load_default()?;
+            if let Some(ref path) = source_file {
+                match vm.add_file_asset(&vault_id, &asset_name, asset_kind, path, usage, tags, metadata) {
+                    Ok(asset) => {
+                        println!("\x1b[32mSuccess:\x1b[0m Added file asset '{}' to Vault '{}'", asset_name, vault_id);
+                        println!("{}", serde_json::to_string_pretty(&asset)?);
+                    }
+                    Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to add file asset: {}", e),
+                }
+            } else if let Some(ref text) = text_content {
+                match vm.add_text_asset(&vault_id, &asset_name, asset_kind, text, usage, tags, metadata) {
+                    Ok(asset) => {
+                        println!("\x1b[32mSuccess:\x1b[0m Added text asset '{}' to Vault '{}'", asset_name, vault_id);
+                        println!("{}", serde_json::to_string_pretty(&asset)?);
+                    }
+                    Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to add text asset: {}", e),
+                }
+            } else {
+                eprintln!("\x1b[31mError:\x1b[0m You must specify either --file or --text for vault add");
+            }
+        }
+        Command::VaultAttach { vault_id, alias } => {
+            let vm = aether_vault::VaultManager::load_default()?;
+            match pm.current() {
+                Ok(Some(meta)) => {
+                    match vm.attach_vault(&meta.root, &vault_id, &alias) {
+                        Ok(_) => println!("\x1b[32mSuccess:\x1b[0m Vault '{}' attached to project '{}' as '{}'", vault_id, meta.name, alias),
+                        Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to attach Vault: {}", e),
+                    }
+                }
+                Ok(None) => eprintln!("\x1b[31mError:\x1b[0m No active project. Open or create a project first before attaching a Vault."),
+                Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to resolve current project: {}", e),
+            }
+        }
+        Command::VaultDetach { vault_id } => {
+            let vm = aether_vault::VaultManager::load_default()?;
+            match pm.current() {
+                Ok(Some(meta)) => {
+                    match vm.detach_vault(&meta.root, &vault_id) {
+                        Ok(_) => println!("\x1b[32mSuccess:\x1b[0m Vault '{}' detached from project '{}'", vault_id, meta.name),
+                        Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to detach Vault: {}", e),
+                    }
+                }
+                Ok(None) => eprintln!("\x1b[31mError:\x1b[0m No active project. Open a project first."),
+                Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to resolve current project: {}", e),
+            }
+        }
+        Command::VaultAttached => {
+            match pm.current() {
+                Ok(Some(meta)) => {
+                    match aether_vault::VaultManager::load_project_links(&meta.root) {
+                        Ok(links) => {
+                            println!("Vaults attached to project '{}':", meta.name);
+                            println!("{}", serde_json::to_string_pretty(&links)?);
+                        }
+                        Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to load attached Vaults: {}", e),
+                    }
+                }
+                Ok(None) => eprintln!("\x1b[31mError:\x1b[0m No active project."),
+                Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to resolve current project: {}", e),
+            }
+        }
+        Command::PlanCreate { objective, plan_json } => {
+            let planner = aether_planner::PlannerManager::load_active()?;
+            match planner.create_plan(&objective, plan_json.as_deref()) {
+                Ok(plan) => {
+                    println!("\x1b[32mSuccess:\x1b[0m Created AETHER Plan '{}'", plan.plan_id);
+                    println!("{}", serde_json::to_string_pretty(&plan)?);
+                }
+                Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to create plan: {}", e),
+            }
+        }
+        Command::PlanShow { plan_id } => {
+            let planner = aether_planner::PlannerManager::load_active()?;
+            match planner.get_plan(&plan_id) {
+                Ok(plan) => {
+                    println!("AETHER Plan details:");
+                    println!("{}", serde_json::to_string_pretty(&plan)?);
+                }
+                Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to load plan: {}", e),
+            }
+        }
+        Command::PlanRevise { plan_id, instruction } => {
+            let planner = aether_planner::PlannerManager::load_active()?;
+            match planner.revise_plan(&plan_id, &instruction) {
+                Ok(plan) => {
+                    println!("\x1b[32mSuccess:\x1b[0m Revised Plan '{}'", plan_id);
+                    println!("{}", serde_json::to_string_pretty(&plan)?);
+                }
+                Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to revise plan: {}", e),
+            }
+        }
+        Command::PlanNext { plan_id } => {
+            let planner = aether_planner::PlannerManager::load_active()?;
+            match planner.next_step(&plan_id) {
+                Ok(Some(step)) => {
+                    println!("Next Ready Step in Plan '{}':", plan_id);
+                    println!("{}", serde_json::to_string_pretty(&step)?);
+                }
+                Ok(None) => println!("No ready steps in plan '{}' or all steps are completed.", plan_id),
+                Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to load next step: {}", e),
+            }
+        }
+        Command::PlanCheck { plan_id, step_id, evidence_ref } => {
+            let planner = aether_planner::PlannerManager::load_active()?;
+            match planner.check_step(&plan_id, &step_id, evidence_ref) {
+                Ok(plan) => {
+                    println!("\x1b[32mSuccess:\x1b[0m Checked step '{}' in Plan '{}'", step_id, plan_id);
+                    println!("{}", serde_json::to_string_pretty(&plan)?);
+                }
+                Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to check step: {}", e),
+            }
+        }
+        Command::PlanUncheck { plan_id, step_id } => {
+            let planner = aether_planner::PlannerManager::load_active()?;
+            match planner.uncheck_step(&plan_id, &step_id) {
+                Ok(plan) => {
+                    println!("\x1b[32mSuccess:\x1b[0m Unchecked step '{}' in Plan '{}' (cascading reset applied)", step_id, plan_id);
+                    println!("{}", serde_json::to_string_pretty(&plan)?);
+                }
+                Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to uncheck step: {}", e),
+            }
+        }
+        Command::PlanStatus { plan_id } => {
+            let planner = aether_planner::PlannerManager::load_active()?;
+            match planner.get_plan(&plan_id) {
+                Ok(plan) => {
+                    println!("Plan '{}' Status: {:?}", plan_id, plan.status);
+                    for step in &plan.steps {
+                        println!("  - [{:?}] {} (Command: '{}')", step.status, step.title, step.command);
+                    }
+                }
+                Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to load plan status: {}", e),
+            }
+        }
         _ => unreachable!(),
     }
     Ok(())
 }
 
-fn is_project_command(cmd: &Command) -> bool {
+fn is_local_command(cmd: &Command) -> bool {
     matches!(
         cmd,
         Command::ProjectCreate { .. }
@@ -517,6 +907,20 @@ fn is_project_command(cmd: &Command) -> bool {
             | Command::ProjectClose { .. }
             | Command::ProjectList
             | Command::ProjectDelete { .. }
+            | Command::VaultCreate { .. }
+            | Command::VaultList
+            | Command::VaultShow { .. }
+            | Command::VaultAdd { .. }
+            | Command::VaultAttach { .. }
+            | Command::VaultDetach { .. }
+            | Command::VaultAttached
+            | Command::PlanCreate { .. }
+            | Command::PlanShow { .. }
+            | Command::PlanRevise { .. }
+            | Command::PlanNext { .. }
+            | Command::PlanCheck { .. }
+            | Command::PlanUncheck { .. }
+            | Command::PlanStatus { .. }
     )
 }
 
@@ -544,7 +948,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let full_command = args.join(" ");
         match parse_dsl(&full_command) {
             Ok(cmd) => {
-                if is_project_command(&cmd) {
+                if is_local_command(&cmd) {
                     execute_local_command(cmd).await?;
                 } else {
                     // Resolve project context
@@ -665,7 +1069,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     match parse_dsl(trimmed) {
                         Ok(cmd) => {
-                            if is_project_command(&cmd) {
+                            if is_local_command(&cmd) {
                                 let old_active = active_project_dir.clone();
                                 let _ = execute_local_command(cmd).await;
                                 
@@ -843,5 +1247,207 @@ mod tests {
 
         let cmd10 = parse_dsl("generation cancel @g1").unwrap();
         assert!(matches!(cmd10, Command::CancelGeneration { .. }));
+    }
+
+    #[test]
+    fn test_parser_vault_commands() {
+        let cmd1 = parse_dsl("vault create \"Maison Lux\" --kind Brand --description \"Premium watch branding\"").unwrap();
+        if let Command::VaultCreate { name, kind, description } = cmd1 {
+            assert_eq!(name, "Maison Lux");
+            assert_eq!(kind, aether_core::VaultKind::Brand);
+            assert_eq!(description, Some("Premium watch branding".to_string()));
+        } else {
+            panic!("Should parse vault create");
+        }
+
+        let cmd2 = parse_dsl("vault list").unwrap();
+        assert!(matches!(cmd2, Command::VaultList));
+
+        let cmd3 = parse_dsl("vault show maison_lux").unwrap();
+        if let Command::VaultShow { vault_id } = cmd3 {
+            assert_eq!(vault_id, "maison_lux");
+        } else {
+            panic!("Should parse vault show");
+        }
+
+        let cmd4 = parse_dsl("vault add maison_lux \"Logo Rule\" --type design-rulebook --text \"Do not stretch\" --usage prompt-maker --tags rule --meta \"{'restricted':true}\"").unwrap();
+        if let Command::VaultAdd {
+            vault_id,
+            asset_name,
+            asset_kind,
+            source_file,
+            text_content,
+            usage,
+            tags,
+            metadata,
+        } = cmd4 {
+            assert_eq!(vault_id, "maison_lux");
+            assert_eq!(asset_name, "Logo Rule");
+            assert_eq!(asset_kind, aether_core::VaultAssetKind::DesignRulebook);
+            assert_eq!(source_file, None);
+            assert_eq!(text_content, Some("Do not stretch".to_string()));
+            assert_eq!(usage, vec![aether_core::VaultUsage::PromptMaker]);
+            assert_eq!(tags, vec!["rule".to_string()]);
+            assert!(metadata.get("restricted").unwrap().as_bool().unwrap());
+        } else {
+            panic!("Should parse vault add");
+        }
+
+        let cmd5 = parse_dsl("vault attach maison_lux --alias brand").unwrap();
+        if let Command::VaultAttach { vault_id, alias } = cmd5 {
+            assert_eq!(vault_id, "maison_lux");
+            assert_eq!(alias, "brand");
+        } else {
+            panic!("Should parse vault attach");
+        }
+
+        let cmd6 = parse_dsl("vault detach maison_lux").unwrap();
+        if let Command::VaultDetach { vault_id } = cmd6 {
+            assert_eq!(vault_id, "maison_lux");
+        } else {
+            panic!("Should parse vault detach");
+        }
+
+        let cmd7 = parse_dsl("vault attached").unwrap();
+        assert!(matches!(cmd7, Command::VaultAttached));
+    }
+
+    #[test]
+    fn test_parser_plan_commands() {
+        let cmd1 = parse_dsl("plan create \"Objective to generate promo video\"").unwrap();
+        if let Command::PlanCreate { objective, plan_json } = cmd1 {
+            assert_eq!(objective, "Objective to generate promo video");
+            assert_eq!(plan_json, None);
+        } else {
+            panic!("Should parse plan create");
+        }
+
+        let cmd2 = parse_dsl("plan show plan-123").unwrap();
+        if let Command::PlanShow { plan_id } = cmd2 {
+            assert_eq!(plan_id, "plan-123");
+        } else {
+            panic!("Should parse plan show");
+        }
+
+        let cmd3 = parse_dsl("plan revise plan-123 \"Make it 24fps\"").unwrap();
+        if let Command::PlanRevise { plan_id, instruction } = cmd3 {
+            assert_eq!(plan_id, "plan-123");
+            assert_eq!(instruction, "Make it 24fps");
+        } else {
+            panic!("Should parse plan revise");
+        }
+
+        let cmd4 = parse_dsl("plan next plan-123").unwrap();
+        if let Command::PlanNext { plan_id } = cmd4 {
+            assert_eq!(plan_id, "plan-123");
+        } else {
+            panic!("Should parse plan next");
+        }
+
+        let cmd5 = parse_dsl("plan check plan-123 S1 --evidence @v1").unwrap();
+        if let Command::PlanCheck { plan_id, step_id, evidence_ref } = cmd5 {
+            assert_eq!(plan_id, "plan-123");
+            assert_eq!(step_id, "S1");
+            assert_eq!(evidence_ref.unwrap().to_string(), "@v1");
+        } else {
+            panic!("Should parse plan check");
+        }
+
+        let cmd6 = parse_dsl("plan uncheck plan-123 S1").unwrap();
+        if let Command::PlanUncheck { plan_id, step_id } = cmd6 {
+            assert_eq!(plan_id, "plan-123");
+            assert_eq!(step_id, "S1");
+        } else {
+            panic!("Should parse plan uncheck");
+        }
+
+        let cmd7 = parse_dsl("plan status plan-123").unwrap();
+        if let Command::PlanStatus { plan_id } = cmd7 {
+            assert_eq!(plan_id, "plan-123");
+        } else {
+            panic!("Should parse plan status");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_cli_planner_e2e() {
+        use std::fs;
+        use aether_project::{ProjectManager, ProjectCreateSpec};
+
+        // 1. Setup temporary workspace test dir
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let workspace_root = manifest_dir.parent().unwrap().parent().unwrap().to_path_buf();
+        let test_dir = workspace_root
+            .join("target")
+            .join("test_projects")
+            .join("test_cli_planner_e2e");
+
+        if test_dir.exists() {
+            let _ = fs::remove_dir_all(&test_dir);
+        }
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let registry_path = test_dir.join("projects.json");
+        let mock_home = test_dir.join("mock_home");
+        fs::create_dir_all(&mock_home).unwrap();
+        
+        // Mock HOME and AETHER_PROJECT environment variables
+        std::env::set_var("HOME", &mock_home);
+        std::env::remove_var("AETHER_PROJECT");
+
+        // Initialize ProjectManager using our custom registry
+        let pm = ProjectManager::with_registry_path(registry_path.clone());
+        let proj_dir = test_dir.join("my_cli_project");
+        let spec = ProjectCreateSpec {
+            name: "my_cli_project".to_string(),
+            dir: Some(proj_dir.clone()),
+            adopt: false,
+            force: false,
+        };
+        let _meta = pm.create(spec).expect("Failed to create project");
+
+        // The PM created it and made it the active project in the custom registry.
+        // Set AETHER_PROJECT env variable to this project so default resolution inside the CLI works
+        std::env::set_var("AETHER_PROJECT", &proj_dir.to_string_lossy().to_string());
+
+        // 2. Run 'plan create'
+        let cmd_create = parse_dsl("plan create \"Generate story\"").unwrap();
+        execute_local_command(cmd_create).await.unwrap();
+
+        // 3. Verify that plan file was created on disk
+        let plan_dir = proj_dir.join(".aether/plans");
+        assert!(plan_dir.exists());
+        let entries: Vec<_> = fs::read_dir(&plan_dir).unwrap().collect();
+        assert_eq!(entries.len(), 1);
+        let plan_file = entries[0].as_ref().unwrap().path();
+        let plan_id = plan_file.file_stem().unwrap().to_str().unwrap().to_string();
+
+        // 4. Run 'plan show'
+        let cmd_show = parse_dsl(&format!("plan show {}", plan_id)).unwrap();
+        execute_local_command(cmd_show).await.unwrap();
+
+        // 5. Run 'plan revise'
+        let cmd_revise = parse_dsl(&format!("plan revise {} \"Revise details\"", plan_id)).unwrap();
+        execute_local_command(cmd_revise).await.unwrap();
+
+        // 6. Run 'plan next'
+        let cmd_next = parse_dsl(&format!("plan next {}", plan_id)).unwrap();
+        execute_local_command(cmd_next).await.unwrap();
+
+        // 7. Run 'plan check'
+        // Let's check step S1 (created automatically by the mock planner)
+        let cmd_check = parse_dsl(&format!("plan check {} S1 --evidence @v1", plan_id)).unwrap();
+        execute_local_command(cmd_check).await.unwrap();
+
+        // 8. Run 'plan status'
+        let cmd_status = parse_dsl(&format!("plan status {}", plan_id)).unwrap();
+        execute_local_command(cmd_status).await.unwrap();
+
+        // 9. Run 'plan uncheck'
+        let cmd_uncheck = parse_dsl(&format!("plan uncheck {} S1", plan_id)).unwrap();
+        execute_local_command(cmd_uncheck).await.unwrap();
+
+        // Clean up env
+        std::env::remove_var("AETHER_PROJECT");
     }
 }

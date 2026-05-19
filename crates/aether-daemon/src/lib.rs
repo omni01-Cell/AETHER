@@ -178,13 +178,29 @@ impl SessionManager {
 
         db.add_generation_event(&job_ref, &GenerationStatus::Queued, "Job queued in daemon")?;
 
+        let mut options_with_vault = options.clone();
+        if !options_with_vault.is_object() {
+            options_with_vault = serde_json::json!({});
+        }
+
+        // Compile attached vaults context and inject it into request options
+        if let Ok(vault_mgr) = aether_vault::VaultManager::load_default() {
+            if let Ok(prompt_ctx) = vault_mgr.compile_prompt_context(&self.project_dir) {
+                if let Ok(ctx_json) = serde_json::to_value(&prompt_ctx) {
+                    if let serde_json::Value::Object(ref mut map) = options_with_vault {
+                        map.insert("vault_context".to_string(), ctx_json);
+                    }
+                }
+            }
+        }
+
         let req = aether_core::GenerationRequest {
             job_ref,
             kind,
             user_request,
             model,
             inputs,
-            options,
+            options: options_with_vault,
         };
 
         db.add_generation_event(&job_ref, &GenerationStatus::Running, "Job processing started")?;

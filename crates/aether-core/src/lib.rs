@@ -47,6 +47,9 @@ pub enum AetherError {
 
     #[error("Operation Failed: {0}")]
     OperationFailed(String),
+
+    #[error("Vault Error: {0}")]
+    VaultError(String),
 }
 
 /// The kind of multimedia asset reference.
@@ -909,10 +912,64 @@ pub enum Command {
         target: Option<String>,
     },
     ProjectList,
-    ProjectDelete {
+        ProjectDelete {
         target: String,
         force: bool,
         archive: bool,
+    },
+    VaultCreate {
+        name: String,
+        kind: VaultKind,
+        description: Option<String>,
+    },
+    VaultList,
+    VaultShow {
+        vault_id: String,
+    },
+    VaultAdd {
+        vault_id: String,
+        asset_name: String,
+        asset_kind: VaultAssetKind,
+        source_file: Option<PathBuf>,
+        text_content: Option<String>,
+        usage: Vec<VaultUsage>,
+        tags: Vec<String>,
+        metadata: serde_json::Value,
+    },
+    VaultAttach {
+        vault_id: String,
+        alias: String,
+    },
+    VaultDetach {
+        vault_id: String,
+    },
+    VaultAttached,
+    // AETHER Planner commands
+    PlanCreate {
+        objective: String,
+        plan_json: Option<String>,
+    },
+    PlanShow {
+        plan_id: String,
+    },
+    PlanRevise {
+        plan_id: String,
+        instruction: String,
+    },
+    PlanNext {
+        plan_id: String,
+    },
+    PlanCheck {
+        plan_id: String,
+        step_id: String,
+        evidence_ref: Option<Ref>,
+    },
+    PlanUncheck {
+        plan_id: String,
+        step_id: String,
+    },
+    PlanStatus {
+        plan_id: String,
     },
     Shutdown,
 }
@@ -924,6 +981,308 @@ pub struct CommandResult {
     pub affected_ref: Option<Ref>,
     pub message: String,
     pub snapshot: Option<Snapshot>,
+}
+
+/// The kind of Vault.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum VaultKind {
+    Brand,
+    Character,
+    Product,
+    Campaign,
+    Studio,
+    Client,
+    General,
+}
+
+impl fmt::Display for VaultKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            VaultKind::Brand => "brand",
+            VaultKind::Character => "character",
+            VaultKind::Product => "product",
+            VaultKind::Campaign => "campaign",
+            VaultKind::Studio => "studio",
+            VaultKind::Client => "client",
+            VaultKind::General => "general",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+impl FromStr for VaultKind {
+    type Err = AetherError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "brand" => Ok(VaultKind::Brand),
+            "character" => Ok(VaultKind::Character),
+            "product" => Ok(VaultKind::Product),
+            "campaign" => Ok(VaultKind::Campaign),
+            "studio" => Ok(VaultKind::Studio),
+            "client" => Ok(VaultKind::Client),
+            "general" => Ok(VaultKind::General),
+            other => Err(AetherError::VaultError(format!("Unknown Vault kind: '{}'", other))),
+        }
+    }
+}
+
+/// A Vault structure representing a creative library.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Vault {
+    pub schema_version: u32,
+    pub vault_id: String,
+    pub name: String,
+    pub kind: VaultKind,
+    pub root: PathBuf,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
+    pub description: Option<String>,
+    pub default_language: Option<String>,
+    pub owner: Option<String>,
+}
+
+/// The kind of asset stored in a Vault.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum VaultAssetKind {
+    Logo,
+    LogoVariant,
+    Watermark,
+    ColorPalette,
+    Typography,
+    DesignRulebook,
+    Persona,
+    CharacterReference,
+    ProductReference,
+    VoiceReference,
+    MusicReference,
+    LegalGuideline,
+    PromptSnippet,
+    NegativePrompt,
+    ExampleOutput,
+}
+
+impl fmt::Display for VaultAssetKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            VaultAssetKind::Logo => "logo",
+            VaultAssetKind::LogoVariant => "logo-variant",
+            VaultAssetKind::Watermark => "watermark",
+            VaultAssetKind::ColorPalette => "color-palette",
+            VaultAssetKind::Typography => "typography",
+            VaultAssetKind::DesignRulebook => "design-rulebook",
+            VaultAssetKind::Persona => "persona",
+            VaultAssetKind::CharacterReference => "character-reference",
+            VaultAssetKind::ProductReference => "product-reference",
+            VaultAssetKind::VoiceReference => "voice-reference",
+            VaultAssetKind::MusicReference => "music-reference",
+            VaultAssetKind::LegalGuideline => "legal-guideline",
+            VaultAssetKind::PromptSnippet => "prompt-snippet",
+            VaultAssetKind::NegativePrompt => "negative-prompt",
+            VaultAssetKind::ExampleOutput => "example-output",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+impl FromStr for VaultAssetKind {
+    type Err = AetherError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().replace('_', "-").as_str() {
+            "logo" => Ok(VaultAssetKind::Logo),
+            "logo-variant" => Ok(VaultAssetKind::LogoVariant),
+            "watermark" => Ok(VaultAssetKind::Watermark),
+            "color-palette" | "palette" => Ok(VaultAssetKind::ColorPalette),
+            "typography" | "font" => Ok(VaultAssetKind::Typography),
+            "design-rulebook" | "rule" => Ok(VaultAssetKind::DesignRulebook),
+            "persona" => Ok(VaultAssetKind::Persona),
+            "character-reference" | "character-ref" => Ok(VaultAssetKind::CharacterReference),
+            "product-reference" | "product-ref" => Ok(VaultAssetKind::ProductReference),
+            "voice-reference" | "voice-ref" => Ok(VaultAssetKind::VoiceReference),
+            "music-reference" | "music-ref" => Ok(VaultAssetKind::MusicReference),
+            "legal-guideline" => Ok(VaultAssetKind::LegalGuideline),
+            "prompt-snippet" => Ok(VaultAssetKind::PromptSnippet),
+            "negative-prompt" => Ok(VaultAssetKind::NegativePrompt),
+            "example-output" => Ok(VaultAssetKind::ExampleOutput),
+            other => Err(AetherError::VaultError(format!("Unknown Vault asset kind: '{}'", other))),
+        }
+    }
+}
+
+/// Contexts of generation where the asset is allowed to be used.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum VaultUsage {
+    GenerateImage,
+    EditImage,
+    GenerateVideo,
+    EditVideo,
+    GenerateVoice,
+    CloneVoice,
+    GenerateMusic,
+    GenerateSceneAudio,
+    Storyboard,
+    PromptMaker,
+    ExportBranding,
+}
+
+impl fmt::Display for VaultUsage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            VaultUsage::GenerateImage => "generate-image",
+            VaultUsage::EditImage => "edit-image",
+            VaultUsage::GenerateVideo => "generate-video",
+            VaultUsage::EditVideo => "edit-video",
+            VaultUsage::GenerateVoice => "generate-voice",
+            VaultUsage::CloneVoice => "clone-voice",
+            VaultUsage::GenerateMusic => "generate-music",
+            VaultUsage::GenerateSceneAudio => "generate-scene-audio",
+            VaultUsage::Storyboard => "storyboard",
+            VaultUsage::PromptMaker => "prompt-maker",
+            VaultUsage::ExportBranding => "export-branding",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+impl FromStr for VaultUsage {
+    type Err = AetherError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().replace('_', "-").as_str() {
+            "generate-image" => Ok(VaultUsage::GenerateImage),
+            "edit-image" => Ok(VaultUsage::EditImage),
+            "generate-video" => Ok(VaultUsage::GenerateVideo),
+            "edit-video" => Ok(VaultUsage::EditVideo),
+            "generate-voice" => Ok(VaultUsage::GenerateVoice),
+            "clone-voice" => Ok(VaultUsage::CloneVoice),
+            "generate-music" => Ok(VaultUsage::GenerateMusic),
+            "generate-scene-audio" => Ok(VaultUsage::GenerateSceneAudio),
+            "storyboard" => Ok(VaultUsage::Storyboard),
+            "prompt-maker" => Ok(VaultUsage::PromptMaker),
+            "export-branding" => Ok(VaultUsage::ExportBranding),
+            other => Err(AetherError::VaultError(format!("Unknown Vault usage: '{}'", other))),
+        }
+    }
+}
+
+/// Struct representing an asset indexed in a Vault.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VaultAsset {
+    pub vault_asset_id: String,
+    pub vault_id: String,
+    pub kind: VaultAssetKind,
+    pub name: String,
+    pub path: PathBuf,
+    pub hash: String,
+    pub tags: Vec<String>,
+    pub usage: Vec<VaultUsage>,
+    pub metadata: serde_json::Value,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
+}
+
+/// Reference details of a Vault asset to pass in prompt context.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VaultAssetRef {
+    pub vault_asset_id: String,
+    pub name: String,
+    pub kind: VaultAssetKind,
+    pub path: PathBuf,
+    pub hash: String,
+    pub tags: Vec<String>,
+    pub metadata: serde_json::Value,
+}
+
+/// Prompt context representing the assets, rules, and snippets compiled from a single Vault.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VaultPromptContext {
+    pub vault_id: String,
+    pub name: String,
+    pub kind: VaultKind,
+    pub rules: Vec<String>,
+    pub prompt_snippets: Vec<String>,
+    pub negative_prompts: Vec<String>,
+    pub reference_assets: Vec<VaultAssetRef>,
+}
+
+/// Full prompt context passed down to generative agents.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PromptContext {
+    pub project_summary: Option<String>,
+    pub style_hints: Vec<String>,
+    pub negative_constraints: Vec<String>,
+    pub vault_context: Vec<VaultPromptContext>,
+}
+
+/// Representation of `vault_links.json` entry in a project.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VaultLink {
+    pub vault_id: String,
+    pub alias: String,
+    pub scope: String,
+    pub locked_version: Option<String>,
+}
+
+/// Representation of `vault_links.json` in a project.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VaultLinks {
+    pub schema_version: u32,
+    pub attached_vaults: Vec<VaultLink>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PlanStatus {
+    Pending,
+    Running,
+    Done,
+    Failed,
+    NeedsRevision,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PlanStepStatus {
+    Pending,
+    Ready,
+    Running,
+    Done,
+    Failed,
+    Skipped,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PlanEvidence {
+    pub step_id: String,
+    pub evidence_ref: Option<Ref>,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AetherPlanStep {
+    pub id: String,
+    pub title: String,
+    pub status: PlanStepStatus,
+    pub command: String,
+    pub creates: Vec<RefKind>,
+    pub depends_on: Vec<String>,
+    pub validation: String,
+    pub evidence: Option<PlanEvidence>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AetherPlan {
+    pub plan_id: String,
+    pub objective: String,
+    pub status: PlanStatus,
+    pub assumptions: Vec<String>,
+    pub required_capabilities: Vec<String>,
+    pub steps: Vec<AetherPlanStep>,
+    pub validation_plan: Vec<String>,
+    pub risks: Vec<String>,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
 }
 
 #[cfg(test)]

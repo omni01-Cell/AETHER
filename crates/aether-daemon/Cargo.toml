@@ -7,6 +7,7 @@ edition = "2021"
 aether-core = { path = "../aether-core" }
 aether-persistence = { path = "../aether-persistence" }
 aether-generate = { path = "../aether-generate" }
+aether-vault = { path = "../aether-vault" }
 aether-video = { path = "../aether-video" }
 aether-audio = { path = "../aether-audio" }
 aether-image = { path = "../aether-image" }
@@ -20,3 +21,7 @@ tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
 tiny-skia = { workspace = true }
 hound = { workspace = true }
+
+[dev-dependencies]
+aether-project = { path = "../aether-project" }
+aether-planner = { path = "../aether-planner" }
