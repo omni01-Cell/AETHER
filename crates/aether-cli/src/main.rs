@@ -2,6 +2,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
+
+/// Max wait for daemon socket on first boot (cold start / slow disks).
+const DAEMON_BOOT_TIMEOUT: Duration = Duration::from_secs(60);
+const DAEMON_POLL_INTERVAL: Duration = Duration::from_millis(300);
+const DAEMON_BINARY_NAME: &str = "aether-daemon";
 use tokio::net::UnixStream;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use rustyline::error::ReadlineError;
@@ -577,31 +582,89 @@ pub fn parse_dsl(line: &str) -> Result<Command, String> {
     }
 }
 
+/// Resolves the pre-built `aether-daemon` binary (release preferred over debug).
+fn resolve_daemon_binary() -> Result<PathBuf, std::io::Error> {
+    if let Ok(path) = std::env::var("AETHER_DAEMON") {
+        let p = PathBuf::from(path);
+        if p.is_file() {
+            return Ok(p);
+        }
+    }
+
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join(DAEMON_BINARY_NAME));
+        }
+    }
+    if let Ok(target_dir) = std::env::var("CARGO_TARGET_DIR") {
+        let base = PathBuf::from(target_dir);
+        candidates.push(base.join("release").join(DAEMON_BINARY_NAME));
+        candidates.push(base.join("debug").join(DAEMON_BINARY_NAME));
+    }
+    let mut dir = std::env::current_dir().ok();
+    while let Some(ref d) = dir {
+        let base = d.join("target");
+        candidates.push(base.join("release").join(DAEMON_BINARY_NAME));
+        candidates.push(base.join("debug").join(DAEMON_BINARY_NAME));
+        dir = d.parent().map(PathBuf::from);
+    }
+
+    for path in candidates {
+        if path.is_file() {
+            return Ok(path);
+        }
+    }
+
+    Err(std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        format!(
+            "Could not find '{}'. Build once with: cargo build --release -p aether-daemon -p aether-cli",
+            DAEMON_BINARY_NAME
+        ),
+    ))
+}
+
+fn spawn_daemon(project_dir: &Path) -> Result<std::process::Child, std::io::Error> {
+    let daemon_binary = resolve_daemon_binary()?;
+    println!(
+        "Daemon not running. Auto-starting {} for project '{}'...",
+        daemon_binary.display(),
+        project_dir.display()
+    );
+    std::process::Command::new(&daemon_binary)
+        .arg(project_dir)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+}
+
+async fn wait_for_daemon_socket(sock_path: &Path) -> Result<UnixStream, std::io::Error> {
+    let deadline = tokio::time::Instant::now() + DAEMON_BOOT_TIMEOUT;
+    while tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(DAEMON_POLL_INTERVAL).await;
+        if sock_path.exists() {
+            if let Ok(stream) = UnixStream::connect(sock_path).await {
+                return Ok(stream);
+            }
+        }
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::TimedOut,
+        format!(
+            "Timed out waiting for AETHER daemon to start ({}s). \
+             Ensure the daemon binary is built: cargo build --release -p aether-daemon",
+            DAEMON_BOOT_TIMEOUT.as_secs()
+        ),
+    ))
+}
+
 async fn get_connection(project_dir: &Path, sock_path: &Path) -> Result<UnixStream, std::io::Error> {
     match UnixStream::connect(sock_path).await {
         Ok(stream) => Ok(stream),
         Err(_e) => {
-            println!("Daemon not running. Auto-starting AETHER daemon for project '{}'...", project_dir.to_string_lossy());
-            let daemon_binary = "cargo";
-            let _child = std::process::Command::new(daemon_binary)
-                .args(["run", "--bin", "aether-daemon", "--quiet", "--", project_dir.to_str().unwrap_or(".")])
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()?;
-            
-            // Wait for socket file to be created
-            for _ in 0..15 {
-                tokio::time::sleep(Duration::from_millis(300)).await;
-                if sock_path.exists() {
-                    if let Ok(stream) = UnixStream::connect(sock_path).await {
-                        return Ok(stream);
-                    }
-                }
-            }
-            Err(std::io::Error::new(
-                std::io::ErrorKind::TimedOut,
-                "Timed out waiting for AETHER daemon to start",
-            ))
+            let _child = spawn_daemon(project_dir)?;
+            wait_for_daemon_socket(sock_path).await
         }
     }
 }

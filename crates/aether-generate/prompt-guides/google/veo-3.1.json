@@ -1,0 +1,38 @@
+{
+  "schema_version": 2,
+  "model_id": "google/veo-3.1",
+  "provider": "google",
+  "api_model": "veo-3.1",
+  "display_name": "Veo 3.1",
+  "kinds": [
+    "VideoText",
+    "VideoFrame",
+    "VideoIngredients",
+    "VideoEdit"
+  ],
+  "model_guide": "# Veo 3.1\n\nCinematic text-to-video. Describe subject, motion, camera, lighting. One camera move per shot.",
+  "parameters": {
+    "aspect_ratio": {
+      "type": "enum",
+      "default": "16:9",
+      "allowed": [
+        "16:9",
+        "9:16",
+        "1:1"
+      ],
+      "required": true,
+      "description": "Video aspect ratio"
+    },
+    "duration_sec": {
+      "type": "number",
+      "default": 8,
+      "allowed": [
+        4,
+        6,
+        8
+      ],
+      "required": true,
+      "description": "Duration seconds"
+    }
+  }
+}

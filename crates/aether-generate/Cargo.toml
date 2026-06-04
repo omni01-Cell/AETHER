@@ -13,3 +13,4 @@ tokio = { workspace = true }
 blake3 = { workspace = true }
 async-trait = { workspace = true }
 uuid = { workspace = true }
+minreq = { version = "2.12", features = ["json-using-serde"] }

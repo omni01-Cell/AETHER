@@ -1,0 +1,72 @@
+{
+  "schema_version": 2,
+  "model_id": "openai/gpt-image-2",
+  "provider": "openai",
+  "api_model": "gpt-image-2",
+  "display_name": "GPT Image 2",
+  "kinds": [
+    "ImageEdit",
+    "Image"
+  ],
+  "model_guide": "# GPT Image 2 (OpenAI)\n\nState-of-the-art image generation and editing.\n\n## Editing\n\n- Prefer **one clear imperative** instruction per edit (e.g. \"Change the tie to green\", \"Remove the car in the background\").\n- State explicitly what must **remain unchanged** from the source image(s).\n- Do not rewrite from scratch if the image is already ~80% correct.\n\n## Quality and output\n\n- Use `quality: high` only when the user demands maximum fidelity or pixel accuracy.\n- Request `background: transparent` only when explicitly asked.\n- Choose `size` from allowed presets; use `auto` when the user does not specify dimensions.\n\n## Prompt style\n\n- No chat filler — output only the image instruction the API will receive.\n- Be specific about subjects, lighting, and composition when generating from text.\n",
+  "parameters": {
+    "quality": {
+      "type": "enum",
+      "default": "medium",
+      "allowed": [
+        "low",
+        "medium",
+        "high",
+        "auto"
+      ],
+      "required": false,
+      "description": "Rendering quality"
+    },
+    "size": {
+      "type": "enum",
+      "default": "auto",
+      "allowed": [
+        "auto",
+        "1024x1024",
+        "1536x1024",
+        "1024x1536"
+      ],
+      "required": true,
+      "description": "Output dimensions"
+    },
+    "n": {
+      "type": "number",
+      "default": 1,
+      "allowed": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "required": false,
+      "description": "Number of images"
+    },
+    "output_format": {
+      "type": "enum",
+      "default": "png",
+      "allowed": [
+        "png",
+        "jpeg",
+        "webp"
+      ],
+      "required": false,
+      "description": "Output format"
+    },
+    "background": {
+      "type": "enum",
+      "default": "auto",
+      "allowed": [
+        "transparent",
+        "opaque",
+        "auto"
+      ],
+      "required": false,
+      "description": "Background mode"
+    }
+  }
+}

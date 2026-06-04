@@ -7,6 +7,7 @@ edition = "2021"
 aether-core = { path = "../aether-core" }
 aether-project = { path = "../aether-project" }
 aether-vault = { path = "../aether-vault" }
+aether-generate = { path = "../aether-generate" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

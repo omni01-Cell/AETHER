@@ -8,6 +8,9 @@ use aether_core::{
 };
 use aether_project::ProjectManager;
 
+/// Appel LLM planner (`agents.v1.json` → bridge TS). Activé via `AETHER_PLANNER_LLM=1`.
+pub use aether_generate::agents::{planner_llm_enabled, PlannerCall};
+
 pub struct PlannerManager {
     project_dir: PathBuf,
 }

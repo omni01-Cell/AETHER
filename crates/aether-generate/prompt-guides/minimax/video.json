@@ -1,0 +1,25 @@
+{
+  "schema_version": 2,
+  "model_id": "minimax/video",
+  "provider": "minimax",
+  "api_model": "minimax-video",
+  "display_name": "Minimax Video",
+  "kinds": [
+    "VideoText",
+    "VideoFrame"
+  ],
+  "model_guide": "# Minimax Video\n\nShort-form video. Concise motion verbs, single camera move.",
+  "parameters": {
+    "duration_sec": {
+      "type": "number",
+      "default": 6,
+      "allowed": [
+        4,
+        6,
+        10
+      ],
+      "required": true,
+      "description": "Duration seconds"
+    }
+  }
+}

@@ -50,6 +50,9 @@ pub enum AetherError {
 
     #[error("Vault Error: {0}")]
     VaultError(String),
+
+    #[error("Prompter needs clarification: {0}")]
+    PrompterNeedsClarification(String),
 }
 
 /// The kind of multimedia asset reference.
@@ -617,6 +620,7 @@ pub enum GenerationKind {
 pub enum GenerationStatus {
     Queued,
     Prompting,
+    AwaitingClarification,
     Submitted,
     Running,
     Downloading,

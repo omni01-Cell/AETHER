@@ -1,0 +1,38 @@
+{
+  "schema_version": 2,
+  "model_id": "minimax/music-2.5",
+  "provider": "minimax",
+  "api_model": "minimax-music-v2",
+  "display_name": "MiniMax Music 2.5",
+  "kinds": [
+    "Music"
+  ],
+  "model_guide": "# MiniMax Music 2.5 — Guide d'utilisation\n\n## Capacités\n\n- Génération musicale complète avec voix ($0.035/génération via FAL.AI)\n- Pistes jusqu'à 5 minutes\n- Support vocal et instrumental\n- Excellente adhérence au style\n- API développeur mature\n\n## Paramètres clés\n\n| Paramètre | Type | Default | Description |\n|-----------|------|---------|-------------|\n| prompt | string | requis | Description de la musique |\n| lyrics | string | optionnel | Paroles |\n| duration | int | 60 | Durée en secondes (max 300) |\n| audio_setting | object | - | Qualité音频 |\n\n## Bonnes pratiques\n\n- Décrivez le genre, l'humeur et l'instrumentation dans le prompt\n- Pour les voix, incluez les paroles dans le champ dédié\n- Le modèle excelle dans les genres populaires\n- Idéal pour la production à grande échelle (meilleur rapport qualité/prix)",
+  "parameters": {
+    "prompt": {
+      "type": "string",
+      "default": "",
+      "required": true,
+      "description": "Description de la musique à générer"
+    },
+    "lyrics": {
+      "type": "string",
+      "default": "",
+      "required": false,
+      "description": "Paroles de la chanson"
+    },
+    "duration": {
+      "type": "number",
+      "default": 60,
+      "allowed": [15, 30, 60, 120, 180, 240, 300],
+      "required": false,
+      "description": "Durée en secondes (max 300)"
+    },
+    "audio_setting": {
+      "type": "object",
+      "default": {"sample_rate": 32000, "bitrate": 128000, "format": "mp3"},
+      "required": false,
+      "description": "Paramètres audio (sample_rate, bitrate, format)"
+    }
+  }
+}

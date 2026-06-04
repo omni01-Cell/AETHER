@@ -49,7 +49,7 @@ impl SessionManager {
         let graph = db.load_graph()?;
         let timeline = db.load_timeline()?;
         
-        let runtime = DefaultGenerationRuntime::mock(cache_dir.join("generated"));
+        let runtime = DefaultGenerationRuntime::new(cache_dir.join("generated"));
 
         let manager = SessionManager {
             registry: RefRegistry::new(),
@@ -194,6 +194,20 @@ impl SessionManager {
             }
         }
 
+        let mut input_asset_paths: Vec<String> = Vec::new();
+        for input_ref in &inputs {
+            let asset = self.registry.resolve(input_ref)?;
+            input_asset_paths.push(asset.path.to_string_lossy().into_owned());
+        }
+        if let serde_json::Value::Object(ref mut map) = options_with_vault {
+            if !input_asset_paths.is_empty() {
+                map.insert(
+                    "input_asset_paths".to_string(),
+                    serde_json::json!(input_asset_paths),
+                );
+            }
+        }
+
         let req = aether_core::GenerationRequest {
             job_ref,
             kind,
@@ -260,11 +274,47 @@ impl SessionManager {
             }
         }
 
-        let msg = if registered.is_empty() {
-            format!("Generation {} completed with status {:?} using model {:?}", job_ref, job.status, job.resolved_model.as_ref().map(|m| &m.id))
+        let mut msg = if registered.is_empty() {
+            format!(
+                "Generation {} completed with status {:?} using model {:?}",
+                job_ref,
+                job.status,
+                job.resolved_model.as_ref().map(|m| &m.id)
+            )
         } else {
-            format!("Generation {} completed with status {:?}. Registered assets: {}", job_ref, job.status, registered.join(", "))
+            format!(
+                "Generation {} completed with status {:?}. Registered assets: {}",
+                job_ref,
+                job.status,
+                registered.join(", ")
+            )
         };
+
+        if job.status == aether_core::GenerationStatus::AwaitingClarification {
+            msg = format!(
+                "Generation {} awaiting prompter clarification (model {:?})",
+                job_ref,
+                job.resolved_model.as_ref().map(|m| &m.id)
+            );
+        }
+
+        if let Some(clar) = job
+            .options
+            .get("prompter_clarifications")
+            .and_then(|v| v.as_array())
+        {
+            if !clar.is_empty() {
+                msg.push_str("\nPrompter (Maître d'Hôtel) needs answers:");
+                for item in clar {
+                    if let (Some(field), Some(question)) = (
+                        item.get("field").and_then(|v| v.as_str()),
+                        item.get("question").and_then(|v| v.as_str()),
+                    ) {
+                        msg.push_str(&format!("\n- [{}] {}", field, question));
+                    }
+                }
+            }
+        }
 
         Ok(msg)
     }

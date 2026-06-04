@@ -6,6 +6,10 @@ pub struct PromptMakerContext {
     pub locale: Option<String>,
     pub style_hint: Option<String>,
     pub vault_context: Option<PromptContext>,
+    /// Modèle cible (ex. `google/gemini-3.1-flash-image-preview`) pour le sous-agent prompter.
+    pub target_model_id: Option<String>,
+    /// Options explicites CLI/daemon (`--options` JSON), hors champs internes.
+    pub explicit_options: serde_json::Value,
 }
 
 pub trait PromptMaker: Send + Sync {
@@ -18,6 +22,7 @@ pub trait PromptMaker: Send + Sync {
     ) -> Result<ProfessionalPrompt, AetherError>;
 }
 
+#[derive(Debug, Clone, Copy, Default)]
 pub struct RuleBasedPromptMaker;
 
 impl PromptMaker for RuleBasedPromptMaker {
@@ -92,6 +97,8 @@ mod tests {
             locale: Some("en".to_string()),
             style_hint: Some("neon glowing".to_string()),
             vault_context: None,
+            target_model_id: None,
+            explicit_options: serde_json::json!({}),
         };
 
         let res = maker.make_prompt(GenerationKind::Image, "cyberpunk street", &ctx).unwrap();

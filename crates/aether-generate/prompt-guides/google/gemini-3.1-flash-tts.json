@@ -1,0 +1,44 @@
+{
+  "schema_version": 2,
+  "model_id": "google/gemini-3.1-flash-tts",
+  "provider": "google",
+  "api_model": "gemini-3.1-flash-tts",
+  "display_name": "Google Gemini 3.1 Flash TTS",
+  "kinds": [
+    "Voice"
+  ],
+  "model_guide": "# Google Gemini 3.1 Flash TTS — Guide d'utilisation\n\n## Capacités\n\n- Text-to-Speech de haute qualité (Elo 1206, #2 Artificial Analysis)\n- 200+ audio tags pour contrôler style, ton, rythme\n- 70+ langues supportées\n- Dialogue multi-speaker natif\n- Sortie audio native via Gemini API\n\n## Audio Tags disponibles\n\n| Tag | Description |\n|-----|-------------|\n| [whisper] | Chuchotement |\n| [excited] | Voix excitée |\n| [calm] | Voix calme |\n| [sad] | Voix triste |\n| [angry] | Voix en colère |\n| [narrator] | Voix narrateur |\n\n## Bonnes pratiques\n\n- Utilisez les audio tags pour contrôler l'émotion\n- Pour le dialogue, indiquez le speaker avant la réplique\n- Le modèle traite la génération vocale comme une tâche linguistique\n- Idéal pour les workflows Google (Gemini API, Vertex AI)",
+  "parameters": {
+    "text": {
+      "type": "string",
+      "default": "",
+      "required": true,
+      "description": "Texte à synthétiser"
+    },
+    "voice_name": {
+      "type": "enum",
+      "default": "en-US-Neural2-F",
+      "allowed": ["en-US-Neural2-F", "en-US-Neural2-M", "fr-FR-Neural2-A", "fr-FR-Neural2-B", "ja-JP-Neural2-B"],
+      "required": false,
+      "description": "Nom de la voix"
+    },
+    "speaking_rate": {
+      "type": "number",
+      "default": 1.0,
+      "required": false,
+      "description": "Vitesse de parole (0.25-4.0)"
+    },
+    "pitch": {
+      "type": "number",
+      "default": 0.0,
+      "required": false,
+      "description": "Pitch (-20.0 à 20.0)"
+    },
+    "volume_gain_db": {
+      "type": "number",
+      "default": 0.0,
+      "required": false,
+      "description": "Gain volume en dB (-96.0 à 16.0)"
+    }
+  }
+}

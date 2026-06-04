@@ -1,0 +1,70 @@
+{
+  "schema_version": 2,
+  "model_id": "bytedance/seedance-2.0",
+  "provider": "bytedance",
+  "api_model": "seedance-2.0",
+  "display_name": "Seedance 2.0",
+  "kinds": [
+    "VideoText",
+    "VideoFrame",
+    "VideoIngredients",
+    "VideoEdit"
+  ],
+  "model_guide": "# Seedance 2.0 — Guide d'utilisation professionnelle\n\n## Capacités principales\n\nSeedance 2.0 est un modèle de génération vidéo multimodal de ByteDance qui supporte :\n- **Text-to-Video** : Génération de vidéos à partir de descriptions textuelles\n- **Image-to-Video** : Animation d'images statiques (première et/ou dernière frame)\n- **Reference-to-Video** : Utilisation d'images, vidéos et audios comme références\n- **Video Editing** : Modification de vidéos existantes\n- **Video Extension** : Prolongation de vidéos existantes\n\n## Règles de prompt optimales\n\n### Structure recommandée\n1. **Sujet** : Décrivez clairement le sujet principal\n2. **Action** : Décrivez le mouvement ou l'action\n3. **Environnement** : Précisez le décor et l'ambiance\n4. **Caméra** : Spécifiez les mouvements de caméra\n5. **Éclairage** : Décrivez la lumière et l'atmosphère\n\n### Anglais par défaut\nRédigez toujours la structure de base en anglais pour un tokenization optimale.\n\n### Weight Hacking\nUtilisez le français ou d'autres langues pour :\n- Le texte intégré dans l'image (OCR localisé)\n- Les concepts culturels spécifiques\n- Les émotions et nuances émotionnelles\n\n### Multi-shot\nUtilisez le format `Shot 1:`, `Shot 2:` pour les séquences multi-plans.\n\n### Audio natif\nLe modèle génère audio et vidéo synchronisés. Utilisez des guillemets doubles pour le dialogue.\n\n## Modes de génération\n\n| Mode | Description | Paramètres clés |\n|------|-------------|------------------|\n| Text-to-Video | Description textuelle pure | prompt, aspect_ratio, duration |\n| Image-to-Video | Animation d'image(s) | prompt, first_frame, last_frame |\n| Reference-to-Video | Multimodal (images, vidéos, audios) | prompt, reference_images/videos/audios |\n| Video-Extend | Prolongation de vidéo | prompt, reference_video |",
+  "parameters": {
+    "aspect_ratio": {
+      "type": "enum",
+      "default": "16:9",
+      "allowed": [
+        "16:9",
+        "9:16",
+        "4:3",
+        "3:4",
+        "1:1",
+        "21:9",
+        "adaptive"
+      ],
+      "required": false,
+      "description": "Ratio d'aspect de la vidéo"
+    },
+    "duration": {
+      "type": "number",
+      "default": 5,
+      "allowed": [4, 5, 6, 8, 10, 12, 15],
+      "required": false,
+      "description": "Durée en secondes (4-15)"
+    },
+    "resolution": {
+      "type": "enum",
+      "default": "720p",
+      "allowed": ["480p", "720p"],
+      "required": false,
+      "description": "Résolution de sortie"
+    },
+    "generate_audio": {
+      "type": "boolean",
+      "default": true,
+      "required": false,
+      "description": "Générer l'audio synchronisé"
+    },
+    "model": {
+      "type": "enum",
+      "default": "standard",
+      "allowed": ["fast", "standard"],
+      "required": false,
+      "description": "Variante du modèle (fast = plus rapide, standard = meilleure qualité)"
+    },
+    "seed": {
+      "type": "number",
+      "default": 42,
+      "required": false,
+      "description": "Seed pour la reproductibilité (-1 = aléatoire)"
+    },
+    "watermark": {
+      "type": "boolean",
+      "default": false,
+      "required": false,
+      "description": "Ajouter un filigrane"
+    }
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "schema_version": 2,
+  "model_id": "openai/tts-1-hd",
+  "provider": "openai",
+  "api_model": "tts-1-hd",
+  "display_name": "OpenAI TTS-1 HD",
+  "kinds": [
+    "Voice"
+  ],
+  "model_guide": "# OpenAI TTS-1 HD — Guide d'utilisation\n\n## Capacités\n\n- Text-to-Speech naturel (Elo 1102, #17 Artificial Analysis)\n- 50+ langues supportées\n- 13 voix prédéfinies (Alloy, Echo, Fable, Onyx, Nova, Shimmer...)\n- Contrôle via instructions naturelles (\"speak calmly\", \"sound excited\")\n- Intégration ecosystem OpenAI\n\n## Bonnes pratiques\n\n- Utilisez TTS-1 HD pour la meilleure qualité\n- Utilisez TTS-1 pour la vitesse et le coût\n- Pour les agents vocaux, préférez les modèles streaming\n- Intégration simple avec l'API OpenAI existante",
+  "parameters": {
+    "text": {
+      "type": "string",
+      "default": "",
+      "required": true,
+      "description": "Texte à synthétiser"
+    },
+    "model": {
+      "type": "enum",
+      "default": "tts-1-hd",
+      "allowed": ["tts-1", "tts-1-hd"],
+      "required": true,
+      "description": "Modèle OpenAI TTS"
+    },
+    "voice": {
+      "type": "enum",
+      "default": "alloy",
+      "allowed": ["alloy", "echo", "fable", "onyx", "nova", "shimmer"],
+      "required": true,
+      "description": "Voix à utiliser"
+    },
+    "response_format": {
+      "type": "enum",
+      "default": "mp3",
+      "allowed": ["mp3", "opus", "aac", "flac", "wav", "pcm"],
+      "required": false,
+      "description": "Format audio de sortie"
+    },
+    "speed": {
+      "type": "number",
+      "default": 1.0,
+      "required": false,
+      "description": "Vitesse de parole (0.25-4.0)"
+    }
+  }
+}

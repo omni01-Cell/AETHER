@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "routes": [
+    {
+      "function": "edit-image",
+      "kinds": ["ImageEdit"],
+      "primary": {
+        "model_id": "openai/gpt-image-2",
+        "bridge_handler": "openai-image-edit"
+      },
+      "fallback": {
+        "model_id": "google/gemini-3.1-flash-image-preview",
+        "bridge_handler": "nano-banana-image-edit"
+      }
+    },
+    {
+      "function": "generate-image",
+      "kinds": ["Image"],
+      "primary": {
+        "model_id": "google/gemini-3.1-flash-image-preview",
+        "bridge_handler": "nano-banana-image-edit"
+      },
+      "fallback": {
+        "model_id": "openai/gpt-image-2",
+        "bridge_handler": "openai-image-edit"
+      }
+    },
+    {
+      "function": "generate-video-text",
+      "kinds": ["VideoText"],
+      "primary": {
+        "model_id": "kuaishou/kling-3.0",
+        "bridge_handler": "kling-video"
+      },
+      "fallback": {
+        "model_id": "google/veo-3.1",
+        "bridge_handler": "veo-video"
+      }
+    },
+    {
+      "function": "generate-video-frame",
+      "kinds": ["VideoFrame"],
+      "primary": {
+        "model_id": "kuaishou/kling-3.0",
+        "bridge_handler": "kling-video"
+      },
+      "fallback": {
+        "model_id": "google/veo-3.1",
+        "bridge_handler": "veo-video"
+      }
+    },
+    {
+      "function": "generate-video-ingredients",
+      "kinds": ["VideoIngredients"],
+      "primary": {
+        "model_id": "bytedance/seedance-2.0",
+        "bridge_handler": "seedance-video"
+      },
+      "fallback": {
+        "model_id": "kuaishou/kling-3.0",
+        "bridge_handler": "kling-video"
+      }
+    },
+    {
+      "function": "edit-video",
+      "kinds": ["VideoEdit"],
+      "primary": {
+        "model_id": "bytedance/seedance-2.0",
+        "bridge_handler": "seedance-video"
+      },
+      "fallback": {
+        "model_id": "kuaishou/kling-3.0",
+        "bridge_handler": "kling-video"
+      }
+    },
+    {
+      "function": "generate-voice",
+      "kinds": ["Voice"],
+      "primary": {
+        "model_id": "elevenlabs/eleven-v3",
+        "bridge_handler": "elevenlabs-tts"
+      },
+      "fallback": {
+        "model_id": "google/gemini-3.1-flash-tts",
+        "bridge_handler": "gemini-tts"
+      }
+    },
+    {
+      "function": "clone-voice",
+      "kinds": ["VoiceClone"],
+      "primary": {
+        "model_id": "elevenlabs/eleven-v3",
+        "bridge_handler": "elevenlabs-tts"
+      },
+      "fallback": {
+        "model_id": "google/gemini-3.1-flash-tts",
+        "bridge_handler": "gemini-tts"
+      }
+    },
+    {
+      "function": "generate-scene-audio",
+      "kinds": ["SceneAudio"],
+      "primary": {
+        "model_id": "elevenlabs/eleven-v3",
+        "bridge_handler": "elevenlabs-tts"
+      },
+      "fallback": {
+        "model_id": "openai/tts-1-hd",
+        "bridge_handler": "openai-tts"
+      }
+    },
+    {
+      "function": "generate-music",
+      "kinds": ["Music"],
+      "primary": {
+        "model_id": "minimax/music-2.5",
+        "bridge_handler": "minimax-music"
+      },
+      "fallback": null
+    }
+  ]
+}

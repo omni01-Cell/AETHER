@@ -611,6 +611,8 @@ mod tests {
             locale: Some("en".to_string()),
             style_hint: Some("gold metallic".to_string()),
             vault_context: Some(prompt_context.clone()),
+            target_model_id: None,
+            explicit_options: serde_json::json!({}),
         };
 
         let enriched = maker

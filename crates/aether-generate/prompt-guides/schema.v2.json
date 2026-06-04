@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AETHER Model JSON v2",
+  "description": "Injecté dans {model} de system.md. model_guide = markdown inline. parameters = schéma API.",
+  "type": "object",
+  "required": ["schema_version", "model_id", "provider", "api_model", "display_name", "kinds", "model_guide", "parameters"],
+  "properties": {
+    "schema_version": { "const": 2 },
+    "model_id": { "type": "string" },
+    "provider": { "type": "string" },
+    "api_model": { "type": "string" },
+    "display_name": { "type": "string" },
+    "kinds": { "type": "array", "items": { "type": "string" } },
+    "model_guide": {
+      "type": "string",
+      "description": "Guide prompt expert, écrit en entier dans ce champ (pas de import fichier au runtime)"
+    },
+    "parameters": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["type", "default"],
+        "properties": {
+          "type": { "enum": ["string", "number", "boolean", "enum"] },
+          "default": {},
+          "allowed": { "type": "array" },
+          "required": { "type": "boolean" },
+          "description": { "type": "string" }
+        }
+      }
+    }
+  }
+}

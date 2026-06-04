@@ -19,4 +19,6 @@ GGC/
 .agent/
 doc/
 graphify-out/
+services/aether-api-bridge/node_modules/
+services/aether-api-bridge/dist/
 

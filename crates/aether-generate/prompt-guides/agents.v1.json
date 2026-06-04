@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "agents": {
+    "prompter": {
+      "provider": "openai",
+      "model_id": "openai/gpt-4o-mini",
+      "api_model": "gpt-4o-mini",
+      "bridge_handler": "openai-chat"
+    },
+    "planner": {
+      "provider": "openai",
+      "model_id": "openai/gpt-4o",
+      "api_model": "gpt-4o",
+      "bridge_handler": "openai-chat"
+    }
+  }
+}

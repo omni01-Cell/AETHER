@@ -1,0 +1,60 @@
+{
+  "schema_version": 2,
+  "model_id": "kuaishou/kling-3.0",
+  "provider": "kuaishou",
+  "api_model": "kling-3.0",
+  "display_name": "Kling 3.0",
+  "kinds": [
+    "VideoText",
+    "VideoFrame",
+    "VideoIngredients"
+  ],
+  "model_guide": "# Kling 3.0 — Guide d'utilisation professionnelle\n\n## Capacités principales\n\nKling 3.0 est le modèle vidéo de Kuaishou, spécialisé dans :\n- **Text-to-Video** : Génération cinématique haute qualité\n- **Image-to-Video** : Animation d'images avec cohérence de sujet\n- **Native 4K** : Support de la résolution 4K\n- **Multi-shot** : Cohérence entre les plans\n- **Audio natif** : Génération audio synchronisée\n\n## Forces du modèle\n\n- **Esthétique cinématique** : Excellente qualité visuelle, textures réalistes\n- **Expressions humaines** : Rendu précis des visages et émotions\n- **Cohérence temporelle** : Sujets stables entre les frames\n- **Physique réaliste** : Eau, gravité, collisions correctes\n\n## Règles de prompt optimales\n\n### Structure cinématique\n```\nShot type + Subject + Action + Environment + Lighting + Camera movement\n```\n\n### Exemples\n- \"Wide shot, a young woman walks through a neon-lit Tokyo street at night, rain reflecting on wet pavement, slow dolly forward\"\n- \"Close-up portrait, an elderly man with weathered face, warm golden hour lighting, shallow depth of field, static camera\"\n\n### Mouvements de caméra supportés\n- Dolly (avant/arrière)\n- Pan (gauche/droite)\n- Tilt (haut/bas)\n- Tracking shot\n- Crane shot\n- Static\n\n### Éviter\n- Prompts trop longs (> 2000 caractères)\n- Trop de mouvements de caméra par shot\n- Sujets abstraits sans description visuelle claire",
+  "parameters": {
+    "aspect_ratio": {
+      "type": "enum",
+      "default": "16:9",
+      "allowed": [
+        "16:9",
+        "9:16",
+        "1:1",
+        "4:3",
+        "3:4"
+      ],
+      "required": false,
+      "description": "Ratio d'aspect de la vidéo"
+    },
+    "duration": {
+      "type": "number",
+      "default": 5,
+      "allowed": [5, 10],
+      "required": false,
+      "description": "Durée en secondes"
+    },
+    "mode": {
+      "type": "enum",
+      "default": "standard",
+      "allowed": ["standard", "professional"],
+      "required": false,
+      "description": "Mode de qualité"
+    },
+    "generate_audio": {
+      "type": "boolean",
+      "default": true,
+      "required": false,
+      "description": "Générer l'audio synchronisé"
+    },
+    "cfg_scale": {
+      "type": "number",
+      "default": 0.5,
+      "required": false,
+      "description": "Classifier-free guidance scale (0.0-1.0)"
+    },
+    "seed": {
+      "type": "number",
+      "default": -1,
+      "required": false,
+      "description": "Seed pour la reproductibilité (-1 = aléatoire)"
+    }
+  }
+}
