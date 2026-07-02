@@ -111,8 +111,7 @@ pub enum BridgeResponse {
 
 /// Invokes the TypeScript API bridge (Node) with a JSON request on stdin.
 pub fn invoke_bridge(req: &BridgeRequest, script: &Path) -> Result<BridgeResponse, AetherError> {
-    let node = std::env::var("AETHER_NODE").unwrap_or_else(|_| "node".to_string());
-    let mut child = Command::new(&node)
+    let mut child = Command::new("node")
         .arg(script)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -131,14 +130,14 @@ pub fn invoke_bridge(req: &BridgeRequest, script: &Path) -> Result<BridgeRespons
     })?;
 
     if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(payload.as_bytes())
-            .map_err(|e| AetherError::OperationFailed(format!("Bridge stdin write failed: {}", e)))?;
+        stdin.write_all(payload.as_bytes()).map_err(|e| {
+            AetherError::OperationFailed(format!("Bridge stdin write failed: {}", e))
+        })?;
     }
 
-    let output = child.wait_with_output().map_err(|e| {
-        AetherError::OperationFailed(format!("Bridge process wait failed: {}", e))
-    })?;
+    let output = child
+        .wait_with_output()
+        .map_err(|e| AetherError::OperationFailed(format!("Bridge process wait failed: {}", e)))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     if !output.status.success() && stdout.trim().is_empty() {
@@ -325,10 +324,7 @@ impl GenerationProvider for BridgeGenerationProvider {
             || model.provider == "minimax"
     }
 
-    fn submit(
-        &self,
-        request: &GenerationRequest,
-    ) -> Result<ProviderSubmitResult, AetherError> {
+    fn submit(&self, request: &GenerationRequest) -> Result<ProviderSubmitResult, AetherError> {
         let prompt_text = request
             .options
             .get("professional_prompt")
@@ -373,9 +369,8 @@ impl GenerationProvider for BridgeGenerationProvider {
             .ok_or_else(|| AetherError::OperationFailed("Missing provider_job_id".to_string()))?;
 
         let cache_path = self.output_dir.join(format!("{}.bridge.json", job_id));
-        let raw = fs::read_to_string(&cache_path).map_err(|e| {
-            AetherError::IoError(cache_path.display().to_string(), e.to_string())
-        })?;
+        let raw = fs::read_to_string(&cache_path)
+            .map_err(|e| AetherError::IoError(cache_path.display().to_string(), e.to_string()))?;
         let success: BridgeSuccess = serde_json::from_str(&raw).map_err(|e| {
             AetherError::OperationFailed(format!("Bridge cache parse failed: {}", e))
         })?;

@@ -15,7 +15,6 @@ Variables d'environnement (jamais dans le repo) :
 - `AETHER_OPENAI_API_KEY` ou `OPENAI_API_KEY`
 - `AETHER_GOOGLE_API_KEY`, `GEMINI_API_KEY`, ou `GOOGLE_API_KEY`
 - `AETHER_API_BRIDGE_SCRIPT` — chemin vers `dist/index.js` (optionnel)
-- `AETHER_NODE` — binaire node (défaut : `node`)
 
 ## Édition d'image (`image_edit`)
 
