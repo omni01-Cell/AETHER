@@ -1424,6 +1424,68 @@ mod tests {
     }
 
     #[test]
+    fn test_topological_sort_empty() {
+        let graph = CompositionGraph::new();
+        let sorted = graph.topological_sort().unwrap();
+        assert!(sorted.is_empty());
+    }
+
+    #[test]
+    fn test_topological_sort_cycle() {
+        let mut graph = CompositionGraph::new();
+        let r1 = "@v1".parse::<Ref>().unwrap();
+
+        let n1 = Node { id: 1, kind: NodeKind::Source(r1.clone()) };
+        let n2 = Node { id: 2, kind: NodeKind::Source(r1) };
+
+        graph.add_node(n1);
+        graph.add_node(n2);
+
+        // Force a cycle bypassing `connect`'s cycle detection to test `topological_sort` error handling
+        graph.connections.push(Connection { from_node: 1, from_port: 0, to_node: 2, to_port: 0 });
+        graph.connections.push(Connection { from_node: 2, from_port: 0, to_node: 1, to_port: 0 });
+
+        let result = graph.topological_sort();
+        assert!(result.is_err());
+        if let Err(AetherError::OperationFailed(msg)) = result {
+            assert_eq!(msg, "Cycle detected during topological sorting");
+        } else {
+            panic!("Expected OperationFailed error due to cycle, got {:?}", result);
+        }
+    }
+
+    #[test]
+    fn test_topological_sort_disconnected() {
+        let mut graph = CompositionGraph::new();
+        let r1 = "@v1".parse::<Ref>().unwrap();
+        let r2 = "@v2".parse::<Ref>().unwrap();
+
+        let n1 = Node { id: 1, kind: NodeKind::Source(r1.clone()) };
+        let n2 = Node { id: 2, kind: NodeKind::Source(r2.clone()) };
+        let n3 = Node { id: 3, kind: NodeKind::Source(r1) };
+        let n4 = Node { id: 4, kind: NodeKind::Source(r2) };
+
+        graph.add_node(n1);
+        graph.add_node(n2);
+        graph.add_node(n3);
+        graph.add_node(n4);
+
+        assert_eq!(graph.connect(Connection { from_node: 1, from_port: 0, to_node: 2, to_port: 0 }), Ok(()));
+        assert_eq!(graph.connect(Connection { from_node: 3, from_port: 0, to_node: 4, to_port: 0 }), Ok(()));
+
+        let sorted = graph.topological_sort().unwrap();
+        assert_eq!(sorted.len(), 4);
+
+        let pos1 = sorted.iter().position(|&x| x == 1).unwrap();
+        let pos2 = sorted.iter().position(|&x| x == 2).unwrap();
+        let pos3 = sorted.iter().position(|&x| x == 3).unwrap();
+        let pos4 = sorted.iter().position(|&x| x == 4).unwrap();
+
+        assert!(pos1 < pos2);
+        assert!(pos3 < pos4);
+    }
+
+    #[test]
     fn test_timeline_serialization() {
         let r1 = "@v1".parse::<Ref>().unwrap();
         let clip = Clip {
