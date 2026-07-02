@@ -1,0 +1,75 @@
+name: Jules PR Review & Auto-Merge
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: jules-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  pull-requests: write
+  contents: write
+  statuses: write
+
+jobs:
+  validate-and-review:
+    name: Validate and Review
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: services/aether-api-bridge/package-lock.json
+
+      - name: Check Rust Format
+        run: cargo fmt --check
+
+      - name: Rust Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Run Rust Tests
+        run: cargo test
+
+      - name: Install Node Dependencies (Bridge)
+        run: |
+          cd services/aether-api-bridge
+          npm ci
+
+      - name: TypeScript Compilation Check (Bridge)
+        run: |
+          cd services/aether-api-bridge
+          npx tsc --noEmit
+
+      - name: Jules PR Reviewer
+        uses: sanjay3290/jules-pr-reviewer@v1
+        with:
+          jules_api_key: ${{ secrets.JULES_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          rules_file: .agent/rules/GCC.md
+          extra_instructions: |
+            Tu es Jules, l'agent IA officiel de revue de code de ce projet AETHER.
+            Commence impérativement tes revues par : "Jules à l'appareil :" ou "Bonjour, ici Jules !".
+            Vérifie le respect du protocole Git-Context-Controller (GCC) décrit dans les fichiers du projet.
+
+      - name: Enable Auto-Merge
+        if: github.event.pull_request.draft == false
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr merge --auto --merge "$PR_URL" || echo "L'auto-merge n'a pas pu être configuré automatiquement."

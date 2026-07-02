@@ -1,0 +1,19 @@
+#!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
+
+echo "=== Running Rust checks ==="
+cargo check && cargo test
+
+# Check clippy if available
+if cargo clippy --help >/dev/null 2>&1; then
+  cargo clippy --all-targets -- -D warnings
+fi
+
+# Check fmt if available
+if cargo fmt --help >/dev/null 2>&1; then
+  cargo fmt --check
+fi
+
+echo "=== Running TypeScript bridge checks ==="
+cd services/aether-api-bridge
+npx tsc --noEmit

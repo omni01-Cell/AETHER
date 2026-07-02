@@ -1,0 +1,12 @@
+{
+  "name": "aether-root",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Root package for managing git hooks in AETHER",
+  "scripts": {
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "husky": "^9.0.0"
+  }
+}

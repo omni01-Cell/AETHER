@@ -14,11 +14,14 @@ Cargo.lock
 .graphify_old.json
 doc/git_credential.json
 doc/git_credential copy.json
-.GCC/
-GGC/
-.agent/
+# .GCC/
+# GGC/
+# .agent/
 doc/
 graphify-out/
 services/aether-api-bridge/node_modules/
 services/aether-api-bridge/dist/
+/node_modules/
+/package-lock.json
+
 
