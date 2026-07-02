@@ -3,7 +3,6 @@ pub mod edl;
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use std::collections::HashMap;
 use rusqlite::{params, Connection, OptionalExtension};
 use aether_core::{
@@ -332,7 +331,7 @@ impl DbManager {
             let (ref_str, kind_str, path_str, hash, metadata_str) = item
                 .map_err(|e| AetherError::DatabaseError(format!("Read asset row failed: {}", e)))?;
 
-            let r = Ref::from_str(&ref_str)?;
+            let r = ref_str.parse::<Ref>()?;
             let kind = match kind_str.as_str() {
                 "Video" => AssetKind::Video,
                 "Audio" => AssetKind::Audio,
@@ -703,7 +702,7 @@ impl DbManager {
                 let (asset_ref_str, in_point, out_point, offset, trans_str) = c_item
                     .map_err(|e| AetherError::DatabaseError(format!("Read clip row failed: {}", e)))?;
 
-                let asset_ref = Ref::from_str(&asset_ref_str)?;
+                let asset_ref = asset_ref_str.parse::<Ref>()?;
                 let transition = match trans_str {
                     Some(s) => Some(serde_json::from_str::<TransitionKind>(&s)
                         .map_err(|e| AetherError::DatabaseError(format!("Deserialize transition failed: {}", e)))?),
@@ -846,7 +845,7 @@ impl DbManager {
             },
         ).map_err(|e| AetherError::DatabaseError(format!("Query generation job failed: {}", e)))
         .and_then(|(ref_id_str, kind_str, status_str, requested_model, resolved_model_str, provider_job_id, prompt_str, inputs_str, artifacts_str, error, created_at_ms, updated_at_ms, options_str)| {
-            let job_ref = Ref::from_str(&ref_id_str)?;
+            let job_ref = ref_id_str.parse::<Ref>()?;
             let kind = serde_json::from_str(&kind_str)
                 .map_err(|e| AetherError::DatabaseError(format!("Deserialize kind failed: {}", e)))?;
             let status = serde_json::from_str(&status_str)
@@ -901,7 +900,7 @@ impl DbManager {
         for item in ref_iter {
             let ref_id_str = item
                 .map_err(|e| AetherError::DatabaseError(format!("Read generation job row failed: {}", e)))?;
-            let r = Ref::from_str(&ref_id_str)?;
+            let r = ref_id_str.parse::<Ref>()?;
             let job = self.load_generation_job(&r)?;
             jobs.push(job);
         }
