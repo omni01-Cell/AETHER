@@ -1,0 +1,3 @@
+## 2025-02-12 - Box blur algorithm optimization
+**Learning:** The previous box blur implementation in `apply_box_blur` inside `crates/aether-image/src/cpu.rs` had a performance bottleneck due to its $O(r)$ complexity per pixel where $r$ is the blur radius, and multiple intermediate vector allocations (`.to_vec()` and multiple `.clone()`).
+**Action:** Replace nested loops that recount the window sum with an $O(1)$ sliding window algorithm that simply adds the newly entering pixel to the running sum and subtracts the exiting pixel. Convert internal math to `u32` for speed where possible, removing intermediate vector allocations. Remove temporary files before committing.

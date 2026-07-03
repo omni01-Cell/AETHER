@@ -188,30 +188,51 @@ fn apply_box_blur(pixmap: &mut Pixmap, radius: f32) {
     
     let w = pixmap.width() as i32;
     let h = pixmap.height() as i32;
-    let pixels = pixmap.pixels().to_vec();
-    let mut temp = pixels.clone();
+    let mut temp = vec![tiny_skia::ColorU8::from_rgba(0, 0, 0, 0).premultiply(); (w * h) as usize];
     
-    // Horizontal blur pass
+    let pixels = pixmap.pixels();
+
+    // Horizontal pass
     for y in 0..h {
-        for x in 0..w {
-            let mut r_sum = 0.0;
-            let mut g_sum = 0.0;
-            let mut b_sum = 0.0;
-            let mut a_sum = 0.0;
-            let mut count = 0.0;
+        let mut r_sum = 0;
+        let mut g_sum = 0;
+        let mut b_sum = 0;
+        let mut a_sum = 0;
+        let mut count = 0;
+
+        let row_offset = (y * w) as usize;
+
+        // Initial window
+        for dx in -r..=r {
+            let nx = dx.clamp(0, w - 1);
+            let p = pixels[row_offset + nx as usize];
+            r_sum += p.red() as u32;
+            g_sum += p.green() as u32;
+            b_sum += p.blue() as u32;
+            a_sum += p.alpha() as u32;
+            count += 1;
+        }
+
+        temp[row_offset] = tiny_skia::ColorU8::from_rgba(
+            (r_sum / count) as u8,
+            (g_sum / count) as u8,
+            (b_sum / count) as u8,
+            (a_sum / count) as u8,
+        ).premultiply();
+
+        for x in 1..w {
+            let old_x = (x - r - 1).clamp(0, w - 1);
+            let new_x = (x + r).clamp(0, w - 1);
             
-            for dx in -r..=r {
-                let nx = (x + dx).clamp(0, w - 1);
-                let p = pixels[(y * w + nx) as usize];
-                r_sum += p.red() as f32;
-                g_sum += p.green() as f32;
-                b_sum += p.blue() as f32;
-                a_sum += p.alpha() as f32;
-                count += 1.0;
-            }
+            let old_p = pixels[row_offset + old_x as usize];
+            let new_p = pixels[row_offset + new_x as usize];
             
-            let dest = &mut temp[(y * w + x) as usize];
-            *dest = tiny_skia::ColorU8::from_rgba(
+            r_sum = r_sum + new_p.red() as u32 - old_p.red() as u32;
+            g_sum = g_sum + new_p.green() as u32 - old_p.green() as u32;
+            b_sum = b_sum + new_p.blue() as u32 - old_p.blue() as u32;
+            a_sum = a_sum + new_p.alpha() as u32 - old_p.alpha() as u32;
+
+            temp[row_offset + x as usize] = tiny_skia::ColorU8::from_rgba(
                 (r_sum / count) as u8,
                 (g_sum / count) as u8,
                 (b_sum / count) as u8,
@@ -220,26 +241,44 @@ fn apply_box_blur(pixmap: &mut Pixmap, radius: f32) {
         }
     }
     
-    // Vertical blur pass
-    let pixels_h = temp.clone();
+    // Vertical pass
     let pixels_mut = pixmap.pixels_mut();
     for x in 0..w {
-        for y in 0..h {
-            let mut r_sum = 0.0;
-            let mut g_sum = 0.0;
-            let mut b_sum = 0.0;
-            let mut a_sum = 0.0;
-            let mut count = 0.0;
+        let mut r_sum = 0;
+        let mut g_sum = 0;
+        let mut b_sum = 0;
+        let mut a_sum = 0;
+        let mut count = 0;
+
+        // Initial window
+        for dy in -r..=r {
+            let ny = dy.clamp(0, h - 1);
+            let p = temp[(ny * w + x) as usize];
+            r_sum += p.red() as u32;
+            g_sum += p.green() as u32;
+            b_sum += p.blue() as u32;
+            a_sum += p.alpha() as u32;
+            count += 1;
+        }
+
+        pixels_mut[x as usize] = tiny_skia::ColorU8::from_rgba(
+            (r_sum / count) as u8,
+            (g_sum / count) as u8,
+            (b_sum / count) as u8,
+            (a_sum / count) as u8,
+        ).premultiply();
+
+        for y in 1..h {
+            let old_y = (y - r - 1).clamp(0, h - 1);
+            let new_y = (y + r).clamp(0, h - 1);
             
-            for dy in -r..=r {
-                let ny = (y + dy).clamp(0, h - 1);
-                let p = pixels_h[(ny * w + x) as usize];
-                r_sum += p.red() as f32;
-                g_sum += p.green() as f32;
-                b_sum += p.blue() as f32;
-                a_sum += p.alpha() as f32;
-                count += 1.0;
-            }
+            let old_p = temp[(old_y * w + x) as usize];
+            let new_p = temp[(new_y * w + x) as usize];
+
+            r_sum = r_sum + new_p.red() as u32 - old_p.red() as u32;
+            g_sum = g_sum + new_p.green() as u32 - old_p.green() as u32;
+            b_sum = b_sum + new_p.blue() as u32 - old_p.blue() as u32;
+            a_sum = a_sum + new_p.alpha() as u32 - old_p.alpha() as u32;
             
             pixels_mut[(y * w + x) as usize] = tiny_skia::ColorU8::from_rgba(
                 (r_sum / count) as u8,
