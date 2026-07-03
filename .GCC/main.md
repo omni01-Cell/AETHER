@@ -41,3 +41,14 @@ Attendre l'approbation de l'utilisateur sur le plan d'implémentation avant de c
 
 ## Abandoned branches
 - None
+
+## Decisions made
+- [2025-02-12] Chose to optimize `apply_box_blur` with a sliding window approach ($O(1)$ per pixel instead of $O(r)$) and eliminate the intermediate vector clones by allocating a single buffer upfront. This improves processing speed for images heavily.
+
+## Current status
+- ✅ Done: Implement sliding-window box blur optimization.
+- 🔄 In progress: None
+- ⏳ Pending: None
+
+## Next action
+Submit PR for box blur optimization.
