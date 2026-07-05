@@ -41,3 +41,4 @@ Attendre l'approbation de l'utilisateur sur le plan d'implémentation avant de c
 
 ## Abandoned branches
 - None
+- `plan_fix_unused_import` : Fix code health issue: remove unused import `Write` in `bridge.rs` ([plan_fix_unused_import.md](file:///home/omni/Code/AETHER/.GCC/branches/plan_fix_unused_import.md))

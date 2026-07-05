@@ -1,5 +1,4 @@
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -131,8 +130,7 @@ pub fn invoke_bridge(req: &BridgeRequest, script: &Path) -> Result<BridgeRespons
     })?;
 
     if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(payload.as_bytes())
+        std::io::Write::write_all(&mut stdin, payload.as_bytes())
             .map_err(|e| AetherError::OperationFailed(format!("Bridge stdin write failed: {}", e)))?;
     }
 
