@@ -1,0 +1,1 @@
+- Implemented performance improvement: Use binary search for keyframe interpolation
