@@ -38,6 +38,7 @@ Plan et implémentation SOTA des fonctionnalités manquantes d'AETHER identifié
 
 ## Next action
 Attendre l'approbation de l'utilisateur sur le plan d'implémentation avant de corriger expressions.rs (Phase 4) et de commencer les manquants de Premiere Pro (Phases 5 à 7).
+JULES AI just optimized Keyframe interpolation functions for Bolt. O(log N) operations on animation search/lookup.
 
 ## Abandoned branches
 - None

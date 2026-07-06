@@ -138,11 +138,10 @@ impl<T: Copy + PartialOrd> KeyframeTrack<T> {
     }
 
     pub fn insert_keyframe(&mut self, kf: Keyframe<T>) {
-        if let Some(pos) = self.keyframes.iter().position(|k| k.time_ms == kf.time_ms) {
-            self.keyframes[pos] = kf;
-        } else {
-            self.keyframes.push(kf);
-            self.keyframes.sort_by_key(|k| k.time_ms);
+        // Bolt ⚡ optimization: Use O(log N) binary search instead of O(N) linear search + O(N log N) sort
+        match self.keyframes.binary_search_by_key(&kf.time_ms, |k| k.time_ms) {
+            Ok(pos) => self.keyframes[pos] = kf,
+            Err(pos) => self.keyframes.insert(pos, kf),
         }
     }
 
@@ -170,13 +169,8 @@ impl KeyframeTrack<f32> {
             return self.keyframes[last_idx].value;
         }
 
-        let mut idx = 0;
-        for i in 0..last_idx {
-            if time_ms >= self.keyframes[i].time_ms && time_ms <= self.keyframes[i+1].time_ms {
-                idx = i;
-                break;
-            }
-        }
+        // Bolt ⚡ optimization: O(log N) lookup time via partition_point instead of O(N) linear search
+        let idx = self.keyframes.partition_point(|k| k.time_ms <= time_ms).saturating_sub(1);
 
         let kf0 = &self.keyframes[idx];
         let kf1 = &self.keyframes[idx + 1];

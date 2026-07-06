@@ -1,0 +1,3 @@
+## 2024-07-06 - O(log N) Optimization for Animation Tracks
+**Learning:** Found an $O(N)$ linear search and $O(N \log N)$ sorting approach inside highly-accessed animation keyframe interpolation functions in `crates/aether-core/src/keyframes.rs`. Because keyframes tracks could potentially grow large and be called frequently per-frame, ensuring these operations are bound to $O(\log N)$ is vital for animation performance.
+**Action:** Always favor `binary_search_by_key` or `partition_point` when searching or inserting into sorted vectors in performance critical animation routines. Avoid naive `.push()` and `.sort_by_key()` patterns when maintaining sorted structures.
