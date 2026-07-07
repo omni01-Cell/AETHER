@@ -102,8 +102,7 @@ impl std::str::FromStr for EasingFunction {
             let trimmed = s
                 .replace("cubic_bezier", "")
                 .replace("cubic-bezier", "")
-                .replace('(', "")
-                .replace(')', "");
+                .replace(['(', ')'], "");
             let parts: Vec<&str> = trimmed.split(',').map(|p| p.trim()).collect();
             if parts.len() == 4 {
                 let x1 = parts[0].parse::<f32>().map_err(|e| crate::AetherError::InvalidCommand(e.to_string()))?;
@@ -170,13 +169,7 @@ impl KeyframeTrack<f32> {
             return self.keyframes[last_idx].value;
         }
 
-        let mut idx = 0;
-        for i in 0..last_idx {
-            if time_ms >= self.keyframes[i].time_ms && time_ms <= self.keyframes[i+1].time_ms {
-                idx = i;
-                break;
-            }
-        }
+        let idx = self.keyframes.partition_point(|k| k.time_ms <= time_ms) - 1;
 
         let kf0 = &self.keyframes[idx];
         let kf1 = &self.keyframes[idx + 1];
