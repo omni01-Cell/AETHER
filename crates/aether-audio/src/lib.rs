@@ -6,7 +6,6 @@ use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
-use blake3;
 use aether_core::{AetherError, Ref, Asset, AssetKind};
 
 /// Extracts detailed technical metadata from an audio file using symphonia,
@@ -301,7 +300,7 @@ pub fn encode_audio_file(samples: &[Vec<f32>], sample_rate: u32, path: &Path) ->
     
     let spec = hound::WavSpec {
         channels: channels as u16,
-        sample_rate: sample_rate,
+        sample_rate,
         bits_per_sample: 16,
         sample_format: hound::SampleFormat::Int,
     };
@@ -351,7 +350,7 @@ pub fn apply_eq(
         let channels = samples.len();
         
         let mut filter = dsp::BiquadFilter::new(filter_type, freq_hz, gain_db, q, sample_rate, channels)
-            .map_err(|e| AetherError::MediaError(e))?;
+            .map_err(AetherError::MediaError)?;
         filter.process(&mut samples);
         
         encode_audio_file(&samples, sample_rate, &output_path)?;
@@ -458,7 +457,7 @@ pub fn mix_tracks(
         }
         
         let mixed = dsp::MultiTrackMixer::mix(&tracks, &sample_rates, volumes, pans, 44100)
-            .map_err(|e| AetherError::MediaError(e))?;
+            .map_err(AetherError::MediaError)?;
             
         encode_audio_file(&mixed, 44100, &output_path)?;
     }
@@ -583,19 +582,21 @@ mod tests {
         let sample_rate = 44100;
         let freq = 1000.0;
         let mut samples = vec![vec![0.0; 44100]];
-        for i in 0..44100 {
+        // Performance optimization: Using iterators avoids bounds checking
+        for (i, val) in samples[0].iter_mut().enumerate().take(44100) {
             let t = i as f32 / sample_rate as f32;
-            samples[0][i] = (2.0 * std::f32::consts::PI * freq * t).sin();
+            *val = (2.0 * std::f32::consts::PI * freq * t).sin();
         }
         
         let mut filter = dsp::BiquadFilter::new("HighPass", 2000.0, 0.0, 0.707, sample_rate, 1).unwrap();
         filter.process(&mut samples);
         
         let mut max_val = 0.0f32;
-        for i in 2000..44100 {
-            let val = samples[0][i].abs();
-            if val > max_val {
-                max_val = val;
+        // Performance optimization: Using iterators avoids bounds checking
+        for val in samples[0].iter().skip(2000).take(42100) {
+            let v = val.abs();
+            if v > max_val {
+                max_val = v;
             }
         }
         
