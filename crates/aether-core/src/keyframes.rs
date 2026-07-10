@@ -99,11 +99,12 @@ impl std::str::FromStr for EasingFunction {
         } else if s == "ease_in_out" || s == "ease-in-out" {
             Ok(EasingFunction::EaseInOut)
         } else if s.starts_with("cubic_bezier") || s.starts_with("cubic-bezier") {
-            let trimmed = s
-                .replace("cubic_bezier", "")
-                .replace("cubic-bezier", "")
-                .replace('(', "")
-                .replace(')', "");
+            // Optimization: avoid multiple allocations from consecutive string replaces
+            let stripped = s
+                .strip_prefix("cubic_bezier")
+                .or_else(|| s.strip_prefix("cubic-bezier"))
+                .unwrap_or(s);
+            let trimmed = stripped.trim_matches(|c| c == '(' || c == ')');
             let parts: Vec<&str> = trimmed.split(',').map(|p| p.trim()).collect();
             if parts.len() == 4 {
                 let x1 = parts[0].parse::<f32>().map_err(|e| crate::AetherError::InvalidCommand(e.to_string()))?;
