@@ -102,8 +102,7 @@ impl std::str::FromStr for EasingFunction {
             let trimmed = s
                 .replace("cubic_bezier", "")
                 .replace("cubic-bezier", "")
-                .replace('(', "")
-                .replace(')', "");
+                .replace(['(', ')'], "");
             let parts: Vec<&str> = trimmed.split(',').map(|p| p.trim()).collect();
             if parts.len() == 4 {
                 let x1 = parts[0].parse::<f32>().map_err(|e| crate::AetherError::InvalidCommand(e.to_string()))?;
@@ -170,13 +169,12 @@ impl KeyframeTrack<f32> {
             return self.keyframes[last_idx].value;
         }
 
-        let mut idx = 0;
-        for i in 0..last_idx {
-            if time_ms >= self.keyframes[i].time_ms && time_ms <= self.keyframes[i+1].time_ms {
-                idx = i;
-                break;
-            }
-        }
+        // ⚡ Bolt: Use binary search (O(log n)) instead of linear search (O(n))
+        // since `keyframes` are guaranteed to be sorted by `time_ms`.
+        // `partition_point` gives the index of the first keyframe where time_ms > time_ms
+        // Subtracting 1 gives the index of the last keyframe <= time_ms.
+        let idx = self.keyframes.partition_point(|k| k.time_ms <= time_ms).saturating_sub(1);
+        let idx = std::cmp::min(idx, last_idx - 1); // Ensure we don't go out of bounds for the right keyframe
 
         let kf0 = &self.keyframes[idx];
         let kf1 = &self.keyframes[idx + 1];
