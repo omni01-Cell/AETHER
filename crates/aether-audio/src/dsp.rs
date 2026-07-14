@@ -44,9 +44,9 @@ impl BiquadFilter {
         for ch in 0..channels {
             if ch < self.filters.len() {
                 let filter = &mut self.filters[ch];
-                for sample in &mut samples[ch] {
+                samples[ch].iter_mut().for_each(|sample| {
                     *sample = filter.run(*sample);
-                }
+                });
             }
         }
     }
@@ -91,7 +91,7 @@ impl DynamicCompressor {
             }
             let env = &mut self.envelope[ch];
             
-            for sample in &mut samples[ch] {
+            samples[ch].iter_mut().for_each(|sample| {
                 let input_mag = sample.abs();
                 
                 if input_mag > *env {
@@ -116,7 +116,7 @@ impl DynamicCompressor {
                 
                 let gain_linear = 10.0f32.powf(gain_reduction_db / 20.0);
                 *sample *= gain_linear;
-            }
+            });
         }
     }
 }
@@ -192,15 +192,16 @@ impl MultiTrackMixer {
         }
         
         let ratio = to_rate as f64 / from_rate as f64;
+        let inv_ratio = 1.0 / ratio;
         let channels = track.len();
         let input_len = track[0].len();
         let output_len = (input_len as f64 * ratio).round() as usize;
         
         let mut output = vec![vec![0.0; output_len]; channels];
         
-        for ch in 0..channels {
-            for i in 0..output_len {
-                let src_idx = i as f64 / ratio;
+        for (ch, channel_out) in output.iter_mut().enumerate().take(channels) {
+            channel_out.iter_mut().enumerate().for_each(|(i, sample_out)| {
+                let src_idx = i as f64 * inv_ratio;
                 let low = src_idx.floor() as usize;
                 let high = src_idx.ceil() as usize;
                 let frac = src_idx - low as f64;
@@ -208,11 +209,11 @@ impl MultiTrackMixer {
                 if low < input_len && high < input_len {
                     let sample_low = track[ch][low];
                     let sample_high = track[ch][high];
-                    output[ch][i] = sample_low + (sample_high - sample_low) * frac as f32;
+                    *sample_out = sample_low + (sample_high - sample_low) * frac as f32;
                 } else if low < input_len {
-                    output[ch][i] = track[ch][low];
+                    *sample_out = track[ch][low];
                 }
-            }
+            });
         }
         
         Ok(output)
