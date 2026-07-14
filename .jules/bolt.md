@@ -1,0 +1,3 @@
+## 2024-05-19 - Audio Resampling Bottleneck
+**Learning:** In audio processing, taking divisions out of hot processing loops provides noticeable performance advantages. The floating point divisions limit instruction throughput. By changing a loop divider by a fractional multiplier, and removing unnecessary indexing overhead in vectors by using Rust's `.iter_mut()`, we can give compilers much better opportunities for vectorization and unrolling on these core functions.
+**Action:** When working on array / audio manipulation, prefer iterative blocks (`.iter()`) over numerical indexers, and avoid operations that could limit parallelism like division where a single outer multiplication solves it.
