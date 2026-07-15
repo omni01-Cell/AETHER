@@ -7,21 +7,20 @@ use std::time::Duration;
 const DAEMON_BOOT_TIMEOUT: Duration = Duration::from_secs(60);
 const DAEMON_POLL_INTERVAL: Duration = Duration::from_millis(300);
 const DAEMON_BINARY_NAME: &str = "aether-daemon";
-use tokio::net::UnixStream;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use aether_core::{Command, CommandResult, Snapshot};
+use aether_project::{DeleteMode, ProjectCreateSpec, ProjectManager};
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
-use serde_json;
-use aether_core::{Command, CommandResult, Snapshot};
-use aether_project::{ProjectManager, ProjectCreateSpec, DeleteMode};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::UnixStream;
 
 fn tokenize(line: &str) -> Result<Vec<String>, String> {
     let mut tokens = Vec::new();
     let mut current = String::new();
     let mut in_quotes = false;
-    let mut chars = line.chars().peekable();
+    let chars = line.chars().peekable();
 
-    while let Some(c) = chars.next() {
+    for c in chars {
         if c == '"' {
             in_quotes = !in_quotes;
         } else if c.is_whitespace() && !in_quotes {
@@ -202,7 +201,11 @@ pub fn parse_dsl(line: &str) -> Result<Command, String> {
             let fps = tokens.get(1).and_then(|s| s.parse::<f32>().ok());
             let resolution = tokens.get(2).cloned();
             let colorspace = tokens.get(3).cloned();
-            Ok(Command::Init { fps, resolution, colorspace })
+            Ok(Command::Init {
+                fps,
+                resolution,
+                colorspace,
+            })
         }
         "import" => {
             let path = tokens.get(1).ok_or("Missing path for import")?.clone();
@@ -210,145 +213,287 @@ pub fn parse_dsl(line: &str) -> Result<Command, String> {
         }
         "trim" => {
             let r_str = tokens.get(1).ok_or("Missing reference for trim")?;
-            let r = r_str.parse::<aether_core::Ref>().map_err(|e| e.to_string())?;
+            let r = r_str
+                .parse::<aether_core::Ref>()
+                .map_err(|e| e.to_string())?;
             let start = tokens.get(2).ok_or("Missing start time for trim")?.clone();
             let end = tokens.get(3).ok_or("Missing end time for trim")?.clone();
             Ok(Command::Trim { r, start, end })
         }
         "mix" => {
             let r_str = tokens.get(1).ok_or("Missing reference for mix")?;
-            let r = r_str.parse::<aether_core::Ref>().map_err(|e| e.to_string())?;
-            let volume = tokens.get(2).ok_or("Missing volume for mix")?
-                .parse::<f32>().map_err(|_| "Invalid volume float".to_string())?;
+            let r = r_str
+                .parse::<aether_core::Ref>()
+                .map_err(|e| e.to_string())?;
+            let volume = tokens
+                .get(2)
+                .ok_or("Missing volume for mix")?
+                .parse::<f32>()
+                .map_err(|_| "Invalid volume float".to_string())?;
             Ok(Command::Mix { r, volume })
         }
         "composite" => {
             let base_str = tokens.get(1).ok_or("Missing base reference")?;
-            let base = base_str.parse::<aether_core::Ref>().map_err(|e| e.to_string())?;
+            let base = base_str
+                .parse::<aether_core::Ref>()
+                .map_err(|e| e.to_string())?;
             let overlay_str = tokens.get(2).ok_or("Missing overlay reference")?;
-            let overlay = overlay_str.parse::<aether_core::Ref>().map_err(|e| e.to_string())?;
+            let overlay = overlay_str
+                .parse::<aether_core::Ref>()
+                .map_err(|e| e.to_string())?;
             let at = tokens.get(3).ok_or("Missing timestamp")?.clone();
-            let x = tokens.get(4).ok_or("Missing x coordinate")?
-                .parse::<i32>().map_err(|_| "Invalid x".to_string())?;
-            let y = tokens.get(5).ok_or("Missing y coordinate")?
-                .parse::<i32>().map_err(|_| "Invalid y".to_string())?;
-            Ok(Command::Composite { base, overlay, at, x, y })
+            let x = tokens
+                .get(4)
+                .ok_or("Missing x coordinate")?
+                .parse::<i32>()
+                .map_err(|_| "Invalid x".to_string())?;
+            let y = tokens
+                .get(5)
+                .ok_or("Missing y coordinate")?
+                .parse::<i32>()
+                .map_err(|_| "Invalid y".to_string())?;
+            Ok(Command::Composite {
+                base,
+                overlay,
+                at,
+                x,
+                y,
+            })
         }
         "canvas" => {
-            let width = tokens.get(1).ok_or("Missing width")?
-                .parse::<u32>().map_err(|_| "Invalid width".to_string())?;
-            let height = tokens.get(2).ok_or("Missing height")?
-                .parse::<u32>().map_err(|_| "Invalid height".to_string())?;
+            let width = tokens
+                .get(1)
+                .ok_or("Missing width")?
+                .parse::<u32>()
+                .map_err(|_| "Invalid width".to_string())?;
+            let height = tokens
+                .get(2)
+                .ok_or("Missing height")?
+                .parse::<u32>()
+                .map_err(|_| "Invalid height".to_string())?;
             let color = tokens.get(3).ok_or("Missing color")?.clone();
-            Ok(Command::Canvas { width, height, color })
+            Ok(Command::Canvas {
+                width,
+                height,
+                color,
+            })
         }
         "draw_text" => {
             let r_str = tokens.get(1).ok_or("Missing reference")?;
-            let r = r_str.parse::<aether_core::Ref>().map_err(|e| e.to_string())?;
+            let r = r_str
+                .parse::<aether_core::Ref>()
+                .map_err(|e| e.to_string())?;
             let text = tokens.get(2).ok_or("Missing text")?.clone();
             let font = tokens.get(3).ok_or("Missing font")?.clone();
-            let size = tokens.get(4).ok_or("Missing size")?
-                .parse::<f32>().map_err(|_| "Invalid size".to_string())?;
-            let x = tokens.get(5).ok_or("Missing x")?
-                .parse::<i32>().map_err(|_| "Invalid x".to_string())?;
-            let y = tokens.get(6).ok_or("Missing y")?
-                .parse::<i32>().map_err(|_| "Invalid y".to_string())?;
-            Ok(Command::DrawText { r, text, font, size, x, y })
+            let size = tokens
+                .get(4)
+                .ok_or("Missing size")?
+                .parse::<f32>()
+                .map_err(|_| "Invalid size".to_string())?;
+            let x = tokens
+                .get(5)
+                .ok_or("Missing x")?
+                .parse::<i32>()
+                .map_err(|_| "Invalid x".to_string())?;
+            let y = tokens
+                .get(6)
+                .ok_or("Missing y")?
+                .parse::<i32>()
+                .map_err(|_| "Invalid y".to_string())?;
+            Ok(Command::DrawText {
+                r,
+                text,
+                font,
+                size,
+                x,
+                y,
+            })
         }
         "export" => {
             let r_str = tokens.get(1).ok_or("Missing reference")?;
-            let r = r_str.parse::<aether_core::Ref>().map_err(|e| e.to_string())?;
+            let r = r_str
+                .parse::<aether_core::Ref>()
+                .map_err(|e| e.to_string())?;
             let format = tokens.get(2).ok_or("Missing format")?.clone();
             let codec = tokens.get(3).cloned().unwrap_or_else(|| "h264".to_string());
             let quality = tokens.get(4).cloned().unwrap_or_else(|| "high".to_string());
-            Ok(Command::Export { r, format, codec, quality })
+            Ok(Command::Export {
+                r,
+                format,
+                codec,
+                quality,
+            })
         }
         "inspect" => {
             let r_str = tokens.get(1).ok_or("Missing reference for inspect")?;
-            let r = r_str.parse::<aether_core::Ref>().map_err(|e| e.to_string())?;
+            let r = r_str
+                .parse::<aether_core::Ref>()
+                .map_err(|e| e.to_string())?;
             let start = tokens.get(2).cloned();
             let end = tokens.get(3).cloned();
-            Ok(Command::Inspect { r: Some(r), start, end })
+            Ok(Command::Inspect {
+                r: Some(r),
+                start,
+                end,
+            })
         }
         "generate_storyboard_scratch" | "storyboard_scratch" => {
             let request = tokens.get(1).ok_or("Missing request prompt")?.clone();
             let model = tokens.get(2).cloned();
-            Ok(Command::GenerateStoryboardScratch { request, model, options: serde_json::json!({}) })
+            Ok(Command::GenerateStoryboardScratch {
+                request,
+                model,
+                options: serde_json::json!({}),
+            })
         }
         "generate_dialogue" | "dialogue" => {
             let request = tokens.get(1).ok_or("Missing request prompt")?.clone();
             let model = tokens.get(2).cloned();
-            Ok(Command::GenerateDialogue { request, model, options: serde_json::json!({}) })
+            Ok(Command::GenerateDialogue {
+                request,
+                model,
+                options: serde_json::json!({}),
+            })
         }
         "generate_image" | "image" => {
             let request = tokens.get(1).ok_or("Missing request prompt")?.clone();
             let model = tokens.get(2).cloned();
-            Ok(Command::GenerateImage { request, model, inputs: Vec::new(), options: serde_json::json!({}) })
+            Ok(Command::GenerateImage {
+                request,
+                model,
+                inputs: Vec::new(),
+                options: serde_json::json!({}),
+            })
         }
         "edit_image" => {
             let target_str = tokens.get(1).ok_or("Missing target image reference")?;
-            let target = target_str.parse::<aether_core::Ref>().map_err(|e| e.to_string())?;
+            let target = target_str
+                .parse::<aether_core::Ref>()
+                .map_err(|e| e.to_string())?;
             let request = tokens.get(2).ok_or("Missing edit request prompt")?.clone();
             let model = tokens.get(3).cloned();
-            Ok(Command::EditImage { target, request, model, options: serde_json::json!({}) })
+            Ok(Command::EditImage {
+                target,
+                request,
+                model,
+                options: serde_json::json!({}),
+            })
         }
         "generate_voice" | "voice" => {
-            let text = tokens.get(1).ok_or("Missing text for voice generation")?.clone();
+            let text = tokens
+                .get(1)
+                .ok_or("Missing text for voice generation")?
+                .clone();
             let voice = tokens.get(2).cloned();
             let model = tokens.get(3).cloned();
-            Ok(Command::GenerateVoice { text, voice, model, options: serde_json::json!({}) })
+            Ok(Command::GenerateVoice {
+                text,
+                voice,
+                model,
+                options: serde_json::json!({}),
+            })
         }
         "clone_voice" => {
             let sample_str = tokens.get(1).ok_or("Missing voice sample reference")?;
-            let sample = sample_str.parse::<aether_core::Ref>().map_err(|e| e.to_string())?;
+            let sample = sample_str
+                .parse::<aether_core::Ref>()
+                .map_err(|e| e.to_string())?;
             let name = tokens.get(2).cloned();
             let model = tokens.get(3).cloned();
-            Ok(Command::CloneVoice { sample, name, model, options: serde_json::json!({}) })
+            Ok(Command::CloneVoice {
+                sample,
+                name,
+                model,
+                options: serde_json::json!({}),
+            })
         }
         "generate_scene_audio" | "scene_audio" => {
-            let request = tokens.get(1).ok_or("Missing scene audio description")?.clone();
+            let request = tokens
+                .get(1)
+                .ok_or("Missing scene audio description")?
+                .clone();
             let model = tokens.get(2).cloned();
-            Ok(Command::GenerateSceneAudio { request, model, options: serde_json::json!({}) })
+            Ok(Command::GenerateSceneAudio {
+                request,
+                model,
+                options: serde_json::json!({}),
+            })
         }
         "generate_music" | "music" => {
             let request = tokens.get(1).ok_or("Missing music description")?.clone();
             let model = tokens.get(2).cloned();
-            Ok(Command::GenerateMusic { request, model, options: serde_json::json!({}) })
+            Ok(Command::GenerateMusic {
+                request,
+                model,
+                options: serde_json::json!({}),
+            })
         }
         "generate_video" | "video" => {
             let request = tokens.get(1).ok_or("Missing video description")?.clone();
             let model = tokens.get(2).cloned();
-            Ok(Command::GenerateVideoFromText { request, model, options: serde_json::json!({}) })
+            Ok(Command::GenerateVideoFromText {
+                request,
+                model,
+                options: serde_json::json!({}),
+            })
         }
         "generate_video_frame" | "video_frame" => {
             let frame_str = tokens.get(1).ok_or("Missing frame reference")?;
-            let frame = frame_str.parse::<aether_core::Ref>().map_err(|e| e.to_string())?;
+            let frame = frame_str
+                .parse::<aether_core::Ref>()
+                .map_err(|e| e.to_string())?;
             let request = tokens.get(2).ok_or("Missing animation prompt")?.clone();
             let model = tokens.get(3).cloned();
-            Ok(Command::GenerateVideoFromFrame { frame, request, model, options: serde_json::json!({}) })
+            Ok(Command::GenerateVideoFromFrame {
+                frame,
+                request,
+                model,
+                options: serde_json::json!({}),
+            })
         }
         "generate_video_ingredients" => {
             // Find `--prompt`
-            let prompt_idx = tokens.iter().position(|t| t == "--prompt")
+            let prompt_idx = tokens
+                .iter()
+                .position(|t| t == "--prompt")
                 .ok_or("Missing --prompt flag for video ingredients generation")?;
             if prompt_idx < 1 {
                 return Err("Missing input references for video ingredients".to_string());
             }
             let mut inputs = Vec::new();
             for token in &tokens[1..prompt_idx] {
-                let r = token.parse::<aether_core::Ref>().map_err(|e| e.to_string())?;
+                let r = token
+                    .parse::<aether_core::Ref>()
+                    .map_err(|e| e.to_string())?;
                 inputs.push(r);
             }
-            let request = tokens.get(prompt_idx + 1).ok_or("Missing prompt request after --prompt")?.clone();
+            let request = tokens
+                .get(prompt_idx + 1)
+                .ok_or("Missing prompt request after --prompt")?
+                .clone();
             let model = tokens.get(prompt_idx + 2).cloned();
-            Ok(Command::GenerateVideoFromIngredients { inputs, request, model, options: serde_json::json!({}) })
+            Ok(Command::GenerateVideoFromIngredients {
+                inputs,
+                request,
+                model,
+                options: serde_json::json!({}),
+            })
         }
         "edit_video" => {
-            let target_str = tokens.get(1).ok_or("Missing target video reference to edit")?;
-            let target = target_str.parse::<aether_core::Ref>().map_err(|e| e.to_string())?;
+            let target_str = tokens
+                .get(1)
+                .ok_or("Missing target video reference to edit")?;
+            let target = target_str
+                .parse::<aether_core::Ref>()
+                .map_err(|e| e.to_string())?;
             let request = tokens.get(2).ok_or("Missing edit request prompt")?.clone();
             let model = tokens.get(3).cloned();
-            Ok(Command::EditVideo { target, request, model, options: serde_json::json!({}) })
+            Ok(Command::EditVideo {
+                target,
+                request,
+                model,
+                options: serde_json::json!({}),
+            })
         }
         "generation_status" | "status" => {
             let r = match tokens.get(1) {
@@ -358,8 +503,12 @@ pub fn parse_dsl(line: &str) -> Result<Command, String> {
             Ok(Command::GenerationStatus { r })
         }
         "cancel_generation" | "cancel" => {
-            let r_str = tokens.get(1).ok_or("Missing generation reference to cancel")?;
-            let r = r_str.parse::<aether_core::Ref>().map_err(|e| e.to_string())?;
+            let r_str = tokens
+                .get(1)
+                .ok_or("Missing generation reference to cancel")?;
+            let r = r_str
+                .parse::<aether_core::Ref>()
+                .map_err(|e| e.to_string())?;
             Ok(Command::CancelGeneration { r })
         }
         "undo" => Ok(Command::Undo),
@@ -370,7 +519,7 @@ pub fn parse_dsl(line: &str) -> Result<Command, String> {
             let mut dir = None;
             let mut adopt = false;
             let mut force = false;
-            
+
             let mut i = 2;
             while i < tokens.len() {
                 match tokens[i].as_str() {
@@ -390,27 +539,34 @@ pub fn parse_dsl(line: &str) -> Result<Command, String> {
                     other => return Err(format!("Unknown flag '{}' for project create", other)),
                 }
             }
-            Ok(Command::ProjectCreate { name, dir, adopt, force })
+            Ok(Command::ProjectCreate {
+                name,
+                dir,
+                adopt,
+                force,
+            })
         }
         "project_open" => {
-            let target = tokens.get(1).ok_or("Missing project name or path to open")?.clone();
+            let target = tokens
+                .get(1)
+                .ok_or("Missing project name or path to open")?
+                .clone();
             Ok(Command::ProjectOpen { target })
         }
-        "project_current" => {
-            Ok(Command::ProjectCurrent)
-        }
+        "project_current" => Ok(Command::ProjectCurrent),
         "project_close" => {
             let target = tokens.get(1).cloned();
             Ok(Command::ProjectClose { target })
         }
-        "project_list" => {
-            Ok(Command::ProjectList)
-        }
+        "project_list" => Ok(Command::ProjectList),
         "project_delete" => {
-            let target = tokens.get(1).ok_or("Missing project name or path to delete")?.clone();
+            let target = tokens
+                .get(1)
+                .ok_or("Missing project name or path to delete")?
+                .clone();
             let mut force = false;
             let mut archive = false;
-            
+
             let mut i = 2;
             while i < tokens.len() {
                 match tokens[i].as_str() {
@@ -425,33 +581,46 @@ pub fn parse_dsl(line: &str) -> Result<Command, String> {
                     other => return Err(format!("Unknown flag '{}' for project delete", other)),
                 }
             }
-            Ok(Command::ProjectDelete { target, force, archive })
+            Ok(Command::ProjectDelete {
+                target,
+                force,
+                archive,
+            })
         }
-                "vault_create" => {
+        "vault_create" => {
             let name = tokens.get(1).ok_or("Missing vault name")?.clone();
             let mut kind = aether_core::VaultKind::General;
             let mut description = None;
-            
+
             let mut i = 2;
             while i < tokens.len() {
                 match tokens[i].as_str() {
                     "--kind" => {
                         let k_str = tokens.get(i + 1).ok_or("Missing value for --kind")?;
-                        kind = k_str.parse::<aether_core::VaultKind>().map_err(|e| e.to_string())?;
+                        kind = k_str
+                            .parse::<aether_core::VaultKind>()
+                            .map_err(|e| e.to_string())?;
                         i += 2;
                     }
                     "--description" => {
-                        description = Some(tokens.get(i + 1).ok_or("Missing value for --description")?.clone());
+                        description = Some(
+                            tokens
+                                .get(i + 1)
+                                .ok_or("Missing value for --description")?
+                                .clone(),
+                        );
                         i += 2;
                     }
                     other => return Err(format!("Unknown flag '{}' for vault create", other)),
                 }
             }
-            Ok(Command::VaultCreate { name, kind, description })
+            Ok(Command::VaultCreate {
+                name,
+                kind,
+                description,
+            })
         }
-        "vault_list" => {
-            Ok(Command::VaultList)
-        }
+        "vault_list" => Ok(Command::VaultList),
         "vault_show" => {
             let vault_id = tokens.get(1).ok_or("Missing vault ID")?.clone();
             Ok(Command::VaultShow { vault_id })
@@ -459,14 +628,14 @@ pub fn parse_dsl(line: &str) -> Result<Command, String> {
         "vault_add" => {
             let vault_id = tokens.get(1).ok_or("Missing vault ID")?.clone();
             let asset_name = tokens.get(2).ok_or("Missing asset name")?.clone();
-            
+
             let mut source_file = None;
             let mut text_content = None;
             let mut asset_kind = None;
             let mut usage = Vec::new();
             let mut tags = Vec::new();
             let mut metadata = serde_json::json!({});
-            
+
             let mut i = 3;
             while i < tokens.len() {
                 match tokens[i].as_str() {
@@ -482,13 +651,19 @@ pub fn parse_dsl(line: &str) -> Result<Command, String> {
                     }
                     "--type" => {
                         let val = tokens.get(i + 1).ok_or("Missing value for --type")?;
-                        asset_kind = Some(val.parse::<aether_core::VaultAssetKind>().map_err(|e| e.to_string())?);
+                        asset_kind = Some(
+                            val.parse::<aether_core::VaultAssetKind>()
+                                .map_err(|e| e.to_string())?,
+                        );
                         i += 2;
                     }
                     "--usage" => {
                         let val = tokens.get(i + 1).ok_or("Missing value for --usage")?;
                         for u in val.split(',') {
-                            usage.push(u.parse::<aether_core::VaultUsage>().map_err(|e| e.to_string())?);
+                            usage.push(
+                                u.parse::<aether_core::VaultUsage>()
+                                    .map_err(|e| e.to_string())?,
+                            );
                         }
                         i += 2;
                     }
@@ -502,7 +677,8 @@ pub fn parse_dsl(line: &str) -> Result<Command, String> {
                     "--meta" => {
                         let val = tokens.get(i + 1).ok_or("Missing value for --meta")?;
                         let json_str = val.replace('\'', "\"");
-                        metadata = serde_json::from_str(&json_str).map_err(|e| format!("Invalid metadata JSON: {}", e))?;
+                        metadata = serde_json::from_str(&json_str)
+                            .map_err(|e| format!("Invalid metadata JSON: {}", e))?;
                         i += 2;
                     }
                     other => return Err(format!("Unknown flag '{}' for vault add", other)),
@@ -524,7 +700,10 @@ pub fn parse_dsl(line: &str) -> Result<Command, String> {
             let vault_id = tokens.get(1).ok_or("Missing vault ID")?.clone();
             let mut alias = "default".to_string();
             if let Some(pos) = tokens.iter().position(|t| t == "--alias") {
-                alias = tokens.get(pos + 1).ok_or("Missing value for --alias")?.clone();
+                alias = tokens
+                    .get(pos + 1)
+                    .ok_or("Missing value for --alias")?
+                    .clone();
             }
             Ok(Command::VaultAttach { vault_id, alias })
         }
@@ -532,16 +711,22 @@ pub fn parse_dsl(line: &str) -> Result<Command, String> {
             let vault_id = tokens.get(1).ok_or("Missing vault ID")?.clone();
             Ok(Command::VaultDetach { vault_id })
         }
-        "vault_attached" => {
-            Ok(Command::VaultAttached)
-        }
+        "vault_attached" => Ok(Command::VaultAttached),
         "plan_create" => {
             let objective = tokens.get(1).ok_or("Missing plan objective")?.clone();
             let mut plan_json = None;
             if let Some(pos) = tokens.iter().position(|t| t == "--json") {
-                plan_json = Some(tokens.get(pos + 1).ok_or("Missing value for --json")?.clone());
+                plan_json = Some(
+                    tokens
+                        .get(pos + 1)
+                        .ok_or("Missing value for --json")?
+                        .clone(),
+                );
             }
-            Ok(Command::PlanCreate { objective, plan_json })
+            Ok(Command::PlanCreate {
+                objective,
+                plan_json,
+            })
         }
         "plan_show" => {
             let plan_id = tokens.get(1).ok_or("Missing plan ID")?.clone();
@@ -550,7 +735,10 @@ pub fn parse_dsl(line: &str) -> Result<Command, String> {
         "plan_revise" => {
             let plan_id = tokens.get(1).ok_or("Missing plan ID")?.clone();
             let instruction = tokens.get(2).ok_or("Missing revision instruction")?.clone();
-            Ok(Command::PlanRevise { plan_id, instruction })
+            Ok(Command::PlanRevise {
+                plan_id,
+                instruction,
+            })
         }
         "plan_next" => {
             let plan_id = tokens.get(1).ok_or("Missing plan ID")?.clone();
@@ -562,9 +750,17 @@ pub fn parse_dsl(line: &str) -> Result<Command, String> {
             let mut evidence_ref = None;
             if let Some(pos) = tokens.iter().position(|t| t == "--evidence") {
                 let r_str = tokens.get(pos + 1).ok_or("Missing value for --evidence")?;
-                evidence_ref = Some(r_str.parse::<aether_core::Ref>().map_err(|e| e.to_string())?);
+                evidence_ref = Some(
+                    r_str
+                        .parse::<aether_core::Ref>()
+                        .map_err(|e| e.to_string())?,
+                );
             }
-            Ok(Command::PlanCheck { plan_id, step_id, evidence_ref })
+            Ok(Command::PlanCheck {
+                plan_id,
+                step_id,
+                evidence_ref,
+            })
         }
         "plan_uncheck" => {
             let plan_id = tokens.get(1).ok_or("Missing plan ID")?.clone();
@@ -575,9 +771,7 @@ pub fn parse_dsl(line: &str) -> Result<Command, String> {
             let plan_id = tokens.get(1).ok_or("Missing plan ID")?.clone();
             Ok(Command::PlanStatus { plan_id })
         }
-        "shutdown" => {
-            Ok(Command::Shutdown)
-        }
+        "shutdown" => Ok(Command::Shutdown),
         other => Err(format!("Unknown command '{}'", other)),
     }
 }
@@ -659,7 +853,10 @@ async fn wait_for_daemon_socket(sock_path: &Path) -> Result<UnixStream, std::io:
     ))
 }
 
-async fn get_connection(project_dir: &Path, sock_path: &Path) -> Result<UnixStream, std::io::Error> {
+async fn get_connection(
+    project_dir: &Path,
+    sock_path: &Path,
+) -> Result<UnixStream, std::io::Error> {
     match UnixStream::connect(sock_path).await {
         Ok(stream) => Ok(stream),
         Err(_e) => {
@@ -669,7 +866,10 @@ async fn get_connection(project_dir: &Path, sock_path: &Path) -> Result<UnixStre
     }
 }
 
-async fn send_command(stream: &mut UnixStream, cmd: Command) -> Result<CommandResult, anyhow::Error> {
+async fn send_command(
+    stream: &mut UnixStream,
+    cmd: Command,
+) -> Result<CommandResult, anyhow::Error> {
     let req_bytes = serde_json::to_vec(&cmd)?;
     stream.write_all(&req_bytes).await?;
     stream.write_all(b"\n").await?;
@@ -685,18 +885,34 @@ async fn send_command(stream: &mut UnixStream, cmd: Command) -> Result<CommandRe
 
 fn print_snapshot(snap: &Snapshot) {
     println!("--- PROJECT SNAPSHOT ---");
-    println!("Settings: fps={}, resolution={}x{}, colorspace={}",
+    println!(
+        "Settings: fps={}, resolution={}x{}, colorspace={}",
         snap.settings.fps, snap.settings.width, snap.settings.height, snap.settings.colorspace
     );
-    println!("History Cursor: {} / {}", snap.history_cursor, snap.history_len);
+    println!(
+        "History Cursor: {} / {}",
+        snap.history_cursor, snap.history_len
+    );
     println!("Registered Assets ({}):", snap.assets.len());
     for asset in &snap.assets {
-        println!("  - {} [{:?}] path={}", asset.r, asset.kind, asset.path.to_string_lossy());
+        println!(
+            "  - {} [{:?}] path={}",
+            asset.r,
+            asset.kind,
+            asset.path.to_string_lossy()
+        );
     }
-    println!("Active/Completed Generation Jobs ({}):", snap.generation_jobs.len());
+    println!(
+        "Active/Completed Generation Jobs ({}):",
+        snap.generation_jobs.len()
+    );
     for job in &snap.generation_jobs {
-        println!("  - {} [{:?}] status={:?} model={:?}",
-            job.job_ref, job.kind, job.status, job.resolved_model.as_ref().map(|m| &m.id)
+        println!(
+            "  - {} [{:?}] status={:?} model={:?}",
+            job.job_ref,
+            job.kind,
+            job.status,
+            job.resolved_model.as_ref().map(|m| &m.id)
         );
     }
 }
@@ -704,50 +920,62 @@ fn print_snapshot(snap: &Snapshot) {
 async fn execute_local_command(cmd: Command) -> Result<(), Box<dyn std::error::Error>> {
     let pm = ProjectManager::load_default()?;
     match cmd {
-        Command::ProjectCreate { name, dir, adopt, force } => {
-            match pm.create(ProjectCreateSpec { name, dir, adopt, force }) {
+        Command::ProjectCreate {
+            name,
+            dir,
+            adopt,
+            force,
+        } => {
+            match pm.create(ProjectCreateSpec {
+                name,
+                dir,
+                adopt,
+                force,
+            }) {
                 Ok(meta) => {
-                    println!("\x1b[32mSuccess:\x1b[0m Created and activated project '{}'", meta.name);
+                    println!(
+                        "\x1b[32mSuccess:\x1b[0m Created and activated project '{}'",
+                        meta.name
+                    );
                     println!("{}", serde_json::to_string_pretty(&meta)?);
                 }
                 Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to create project: {}", e),
             }
         }
-        Command::ProjectOpen { target } => {
-            match pm.open(&target) {
-                Ok(meta) => {
-                    println!("\x1b[32mSuccess:\x1b[0m Opened and activated project '{}'", meta.name);
-                    println!("{}", serde_json::to_string_pretty(&meta)?);
-                }
-                Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to open project: {}", e),
+        Command::ProjectOpen { target } => match pm.open(&target) {
+            Ok(meta) => {
+                println!(
+                    "\x1b[32mSuccess:\x1b[0m Opened and activated project '{}'",
+                    meta.name
+                );
+                println!("{}", serde_json::to_string_pretty(&meta)?);
             }
-        }
-        Command::ProjectCurrent => {
-            match pm.current() {
-                Ok(Some(meta)) => {
-                    println!("Current active project: '{}'", meta.name);
-                    println!("{}", serde_json::to_string_pretty(&meta)?);
-                }
-                Ok(None) => println!("No active project."),
-                Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to get current project: {}", e),
+            Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to open project: {}", e),
+        },
+        Command::ProjectCurrent => match pm.current() {
+            Ok(Some(meta)) => {
+                println!("Current active project: '{}'", meta.name);
+                println!("{}", serde_json::to_string_pretty(&meta)?);
             }
-        }
-        Command::ProjectClose { target } => {
-            match pm.close(target.as_deref()) {
-                Ok(_) => println!("\x1b[32mSuccess:\x1b[0m Project closed."),
-                Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to close project: {}", e),
+            Ok(None) => println!("No active project."),
+            Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to get current project: {}", e),
+        },
+        Command::ProjectClose { target } => match pm.close(target.as_deref()) {
+            Ok(_) => println!("\x1b[32mSuccess:\x1b[0m Project closed."),
+            Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to close project: {}", e),
+        },
+        Command::ProjectList => match pm.list() {
+            Ok(projects) => {
+                println!("Registered AETHER Projects:");
+                println!("{}", serde_json::to_string_pretty(&projects)?);
             }
-        }
-        Command::ProjectList => {
-            match pm.list() {
-                Ok(projects) => {
-                    println!("Registered AETHER Projects:");
-                    println!("{}", serde_json::to_string_pretty(&projects)?);
-                }
-                Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to list projects: {}", e),
-            }
-        }
-        Command::ProjectDelete { target, force, archive } => {
+            Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to list projects: {}", e),
+        },
+        Command::ProjectDelete {
+            target,
+            force,
+            archive,
+        } => {
             // Stop daemon if running for this project!
             let resolved_dir = pm.resolve_for_command(Some(&target)).ok();
             if let Some(ref root) = resolved_dir {
@@ -759,18 +987,28 @@ async fn execute_local_command(cmd: Command) -> Result<(), Box<dyn std::error::E
                     }
                 }
             }
-            
-            let mode = if archive { DeleteMode::Archive } else if force { DeleteMode::Force } else {
-                eprintln!("\x1b[31mError:\x1b[0m Refusing to delete project. Use --force or --archive.");
+
+            let mode = if archive {
+                DeleteMode::Archive
+            } else if force {
+                DeleteMode::Force
+            } else {
+                eprintln!(
+                    "\x1b[31mError:\x1b[0m Refusing to delete project. Use --force or --archive."
+                );
                 return Ok(());
             };
-            
+
             match pm.delete(&target, mode) {
                 Ok(_) => println!("\x1b[32mSuccess:\x1b[0m Project deleted."),
                 Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to delete project: {}", e),
             }
         }
-        Command::VaultCreate { name, kind, description } => {
+        Command::VaultCreate {
+            name,
+            kind,
+            description,
+        } => {
             let vm = aether_vault::VaultManager::load_default()?;
             match vm.create_vault(&name, kind, description) {
                 Ok(vault) => {
@@ -802,7 +1040,9 @@ async fn execute_local_command(cmd: Command) -> Result<(), Box<dyn std::error::E
                                 println!("\nAssets in Vault ({}):", assets.len());
                                 println!("{}", serde_json::to_string_pretty(&assets)?);
                             }
-                            Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to load assets: {}", e),
+                            Err(e) => {
+                                eprintln!("\x1b[31mError:\x1b[0m Failed to load assets: {}", e)
+                            }
                         }
                     } else {
                         eprintln!("\x1b[31mError:\x1b[0m Vault '{}' not found", vault_id);
@@ -823,23 +1063,47 @@ async fn execute_local_command(cmd: Command) -> Result<(), Box<dyn std::error::E
         } => {
             let vm = aether_vault::VaultManager::load_default()?;
             if let Some(ref path) = source_file {
-                match vm.add_file_asset(&vault_id, &asset_name, asset_kind, path, usage, tags, metadata) {
+                match vm.add_file_asset(
+                    &vault_id,
+                    &asset_name,
+                    asset_kind,
+                    path,
+                    usage,
+                    tags,
+                    metadata,
+                ) {
                     Ok(asset) => {
-                        println!("\x1b[32mSuccess:\x1b[0m Added file asset '{}' to Vault '{}'", asset_name, vault_id);
+                        println!(
+                            "\x1b[32mSuccess:\x1b[0m Added file asset '{}' to Vault '{}'",
+                            asset_name, vault_id
+                        );
                         println!("{}", serde_json::to_string_pretty(&asset)?);
                     }
                     Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to add file asset: {}", e),
                 }
             } else if let Some(ref text) = text_content {
-                match vm.add_text_asset(&vault_id, &asset_name, asset_kind, text, usage, tags, metadata) {
+                match vm.add_text_asset(
+                    &vault_id,
+                    &asset_name,
+                    asset_kind,
+                    text,
+                    usage,
+                    tags,
+                    metadata,
+                ) {
                     Ok(asset) => {
-                        println!("\x1b[32mSuccess:\x1b[0m Added text asset '{}' to Vault '{}'", asset_name, vault_id);
+                        println!(
+                            "\x1b[32mSuccess:\x1b[0m Added text asset '{}' to Vault '{}'",
+                            asset_name, vault_id
+                        );
                         println!("{}", serde_json::to_string_pretty(&asset)?);
                     }
                     Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to add text asset: {}", e),
                 }
             } else {
-                eprintln!("\x1b[31mError:\x1b[0m You must specify either --file or --text for vault add");
+                eprintln!(
+                    "\x1b[31mError:\x1b[0m You must specify either --file or --text for vault add"
+                );
             }
         }
         Command::VaultAttach { vault_id, alias } => {
@@ -858,36 +1122,50 @@ async fn execute_local_command(cmd: Command) -> Result<(), Box<dyn std::error::E
         Command::VaultDetach { vault_id } => {
             let vm = aether_vault::VaultManager::load_default()?;
             match pm.current() {
-                Ok(Some(meta)) => {
-                    match vm.detach_vault(&meta.root, &vault_id) {
-                        Ok(_) => println!("\x1b[32mSuccess:\x1b[0m Vault '{}' detached from project '{}'", vault_id, meta.name),
-                        Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to detach Vault: {}", e),
-                    }
+                Ok(Some(meta)) => match vm.detach_vault(&meta.root, &vault_id) {
+                    Ok(_) => println!(
+                        "\x1b[32mSuccess:\x1b[0m Vault '{}' detached from project '{}'",
+                        vault_id, meta.name
+                    ),
+                    Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to detach Vault: {}", e),
+                },
+                Ok(None) => {
+                    eprintln!("\x1b[31mError:\x1b[0m No active project. Open a project first.")
                 }
-                Ok(None) => eprintln!("\x1b[31mError:\x1b[0m No active project. Open a project first."),
-                Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to resolve current project: {}", e),
+                Err(e) => eprintln!(
+                    "\x1b[31mError:\x1b[0m Failed to resolve current project: {}",
+                    e
+                ),
             }
         }
-        Command::VaultAttached => {
-            match pm.current() {
-                Ok(Some(meta)) => {
-                    match aether_vault::VaultManager::load_project_links(&meta.root) {
-                        Ok(links) => {
-                            println!("Vaults attached to project '{}':", meta.name);
-                            println!("{}", serde_json::to_string_pretty(&links)?);
-                        }
-                        Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to load attached Vaults: {}", e),
-                    }
+        Command::VaultAttached => match pm.current() {
+            Ok(Some(meta)) => match aether_vault::VaultManager::load_project_links(&meta.root) {
+                Ok(links) => {
+                    println!("Vaults attached to project '{}':", meta.name);
+                    println!("{}", serde_json::to_string_pretty(&links)?);
                 }
-                Ok(None) => eprintln!("\x1b[31mError:\x1b[0m No active project."),
-                Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to resolve current project: {}", e),
-            }
-        }
-        Command::PlanCreate { objective, plan_json } => {
+                Err(e) => eprintln!(
+                    "\x1b[31mError:\x1b[0m Failed to load attached Vaults: {}",
+                    e
+                ),
+            },
+            Ok(None) => eprintln!("\x1b[31mError:\x1b[0m No active project."),
+            Err(e) => eprintln!(
+                "\x1b[31mError:\x1b[0m Failed to resolve current project: {}",
+                e
+            ),
+        },
+        Command::PlanCreate {
+            objective,
+            plan_json,
+        } => {
             let planner = aether_planner::PlannerManager::load_active()?;
             match planner.create_plan(&objective, plan_json.as_deref()) {
                 Ok(plan) => {
-                    println!("\x1b[32mSuccess:\x1b[0m Created AETHER Plan '{}'", plan.plan_id);
+                    println!(
+                        "\x1b[32mSuccess:\x1b[0m Created AETHER Plan '{}'",
+                        plan.plan_id
+                    );
                     println!("{}", serde_json::to_string_pretty(&plan)?);
                 }
                 Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to create plan: {}", e),
@@ -903,7 +1181,10 @@ async fn execute_local_command(cmd: Command) -> Result<(), Box<dyn std::error::E
                 Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to load plan: {}", e),
             }
         }
-        Command::PlanRevise { plan_id, instruction } => {
+        Command::PlanRevise {
+            plan_id,
+            instruction,
+        } => {
             let planner = aether_planner::PlannerManager::load_active()?;
             match planner.revise_plan(&plan_id, &instruction) {
                 Ok(plan) => {
@@ -920,15 +1201,25 @@ async fn execute_local_command(cmd: Command) -> Result<(), Box<dyn std::error::E
                     println!("Next Ready Step in Plan '{}':", plan_id);
                     println!("{}", serde_json::to_string_pretty(&step)?);
                 }
-                Ok(None) => println!("No ready steps in plan '{}' or all steps are completed.", plan_id),
+                Ok(None) => println!(
+                    "No ready steps in plan '{}' or all steps are completed.",
+                    plan_id
+                ),
                 Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to load next step: {}", e),
             }
         }
-        Command::PlanCheck { plan_id, step_id, evidence_ref } => {
+        Command::PlanCheck {
+            plan_id,
+            step_id,
+            evidence_ref,
+        } => {
             let planner = aether_planner::PlannerManager::load_active()?;
             match planner.check_step(&plan_id, &step_id, evidence_ref) {
                 Ok(plan) => {
-                    println!("\x1b[32mSuccess:\x1b[0m Checked step '{}' in Plan '{}'", step_id, plan_id);
+                    println!(
+                        "\x1b[32mSuccess:\x1b[0m Checked step '{}' in Plan '{}'",
+                        step_id, plan_id
+                    );
                     println!("{}", serde_json::to_string_pretty(&plan)?);
                 }
                 Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to check step: {}", e),
@@ -950,7 +1241,10 @@ async fn execute_local_command(cmd: Command) -> Result<(), Box<dyn std::error::E
                 Ok(plan) => {
                     println!("Plan '{}' Status: {:?}", plan_id, plan.status);
                     for step in &plan.steps {
-                        println!("  - [{:?}] {} (Command: '{}')", step.status, step.title, step.command);
+                        println!(
+                            "  - [{:?}] {} (Command: '{}')",
+                            step.status, step.title, step.command
+                        );
                     }
                 }
                 Err(e) => eprintln!("\x1b[31mError:\x1b[0m Failed to load plan status: {}", e),
@@ -991,9 +1285,12 @@ fn is_local_command(cmd: &Command) -> bool {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let mut explicit_project = None;
-    
+
     // Parse global --project or -p flag
-    if let Some(pos) = args.iter().position(|arg| arg == "--project" || arg == "-p") {
+    if let Some(pos) = args
+        .iter()
+        .position(|arg| arg == "--project" || arg == "-p")
+    {
         if pos + 1 < args.len() {
             explicit_project = Some(args[pos + 1].clone());
             args.remove(pos + 1);
@@ -1022,7 +1319,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             std::process::exit(1);
                         }
                     };
-                    
+
                     let sock_path = project_dir.join(".aether/aether.sock");
                     let mut stream = match get_connection(&project_dir, &sock_path).await {
                         Ok(s) => s,
@@ -1031,7 +1328,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             std::process::exit(1);
                         }
                     };
-                    
+
                     match send_command(&mut stream, cmd).await {
                         Ok(result) => {
                             if result.success {
@@ -1060,10 +1357,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("=======================================================");
 
         // Try to show current active project
-        let mut active_project_dir = match pm.resolve_for_command(explicit_project.as_deref()) {
-            Ok(d) => Some(d),
-            Err(_) => None,
-        };
+        let mut active_project_dir = pm.resolve_for_command(explicit_project.as_deref()).ok();
 
         if let Some(ref dir) = active_project_dir {
             println!("Active project context: {}", dir.to_string_lossy());
@@ -1071,7 +1365,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("Warning: No active project context. Run 'project create <name>' or 'project open <name>' to start.");
         }
 
-        let home = std::env::var("HOME").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("/home/omni"));
+        let home = std::env::var("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("/home/omni"));
         let aether_cli_dir = home.join(".config/aether");
         let _ = fs::create_dir_all(&aether_cli_dir);
         let mut rl = DefaultEditor::new()?;
@@ -1135,17 +1431,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             if is_local_command(&cmd) {
                                 let old_active = active_project_dir.clone();
                                 let _ = execute_local_command(cmd).await;
-                                
+
                                 // Re-resolve active project
-                                active_project_dir = match pm.resolve_for_command(None) {
-                                    Ok(d) => Some(d),
-                                    Err(_) => None,
-                                };
-                                
+                                active_project_dir = pm.resolve_for_command(None).ok();
+
                                 if active_project_dir != old_active {
                                     stream = None; // Reset stream so we connect to the new project daemon
                                     if let Some(ref dir) = active_project_dir {
-                                        println!("Active project context changed to: {}", dir.to_string_lossy());
+                                        println!(
+                                            "Active project context changed to: {}",
+                                            dir.to_string_lossy()
+                                        );
                                     } else {
                                         println!("No active project context.");
                                     }
@@ -1154,22 +1450,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 // For non-project commands, make sure we have a resolved project directory
                                 let project_dir = match &active_project_dir {
                                     Some(d) => d.clone(),
-                                    None => {
-                                        match pm.resolve_for_command(None) {
-                                            Ok(d) => {
-                                                active_project_dir = Some(d.clone());
-                                                d
-                                            }
-                                            Err(e) => {
-                                                eprintln!("\x1b[31mError:\x1b[0m {}", e);
-                                                continue;
-                                            }
+                                    None => match pm.resolve_for_command(None) {
+                                        Ok(d) => {
+                                            active_project_dir = Some(d.clone());
+                                            d
                                         }
-                                    }
+                                        Err(e) => {
+                                            eprintln!("\x1b[31mError:\x1b[0m {}", e);
+                                            continue;
+                                        }
+                                    },
                                 };
-                                
+
                                 let sock_path = project_dir.join(".aether/aether.sock");
-                                
+
                                 // Get connection if not already connected
                                 let current_stream = match &mut stream {
                                     Some(s) => s,
@@ -1188,7 +1482,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 };
 
                                 let is_shutdown = matches!(cmd, Command::Shutdown);
-                                
+
                                 match send_command(current_stream, cmd).await {
                                     Ok(result) => {
                                         if result.success {
@@ -1209,7 +1503,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     Err(e) => {
                                         eprintln!("\x1b[31mCommunication Error:\x1b[0m {:?}", e);
                                         // Try reconnecting
-                                        if let Ok(new_stream) = get_connection(&project_dir, &sock_path).await {
+                                        if let Ok(new_stream) =
+                                            get_connection(&project_dir, &sock_path).await
+                                        {
                                             stream = Some(new_stream);
                                             println!("Reconnected to AETHER daemon.");
                                         } else {
@@ -1255,27 +1551,36 @@ mod tests {
     #[test]
     fn test_tokenizer_quotes() {
         let tokens = tokenize("draw_text @img1 \"Hello World\" Arial 24").unwrap();
-        assert_eq!(tokens, vec!["draw_text", "@img1", "Hello World", "Arial", "24"]);
+        assert_eq!(
+            tokens,
+            vec!["draw_text", "@img1", "Hello World", "Arial", "24"]
+        );
     }
 
     #[test]
     fn test_parser_init() {
         let cmd = parse_dsl("init 25 1280x720 rec2020").unwrap();
-        assert_eq!(cmd, Command::Init {
-            fps: Some(25.0),
-            resolution: Some("1280x720".to_string()),
-            colorspace: Some("rec2020".to_string())
-        });
+        assert_eq!(
+            cmd,
+            Command::Init {
+                fps: Some(25.0),
+                resolution: Some("1280x720".to_string()),
+                colorspace: Some("rec2020".to_string())
+            }
+        );
     }
 
     #[test]
     fn test_parser_canvas() {
         let cmd = parse_dsl("canvas 640 480 green").unwrap();
-        assert_eq!(cmd, Command::Canvas {
-            width: 640,
-            height: 480,
-            color: "green".to_string()
-        });
+        assert_eq!(
+            cmd,
+            Command::Canvas {
+                width: 640,
+                height: 480,
+                color: "green".to_string()
+            }
+        );
     }
 
     #[test]
@@ -1299,7 +1604,8 @@ mod tests {
         let cmd6 = parse_dsl("edit image @img1 \"test prompt\"").unwrap();
         assert!(matches!(cmd6, Command::EditImage { .. }));
 
-        let cmd7 = parse_dsl("generate video-ingredients @img1 @a1 --prompt \"test prompt\"").unwrap();
+        let cmd7 =
+            parse_dsl("generate video-ingredients @img1 @a1 --prompt \"test prompt\"").unwrap();
         assert!(matches!(cmd7, Command::GenerateVideoFromIngredients { .. }));
 
         let cmd8 = parse_dsl("edit video @v1 \"test prompt\"").unwrap();
@@ -1314,8 +1620,16 @@ mod tests {
 
     #[test]
     fn test_parser_vault_commands() {
-        let cmd1 = parse_dsl("vault create \"Maison Lux\" --kind Brand --description \"Premium watch branding\"").unwrap();
-        if let Command::VaultCreate { name, kind, description } = cmd1 {
+        let cmd1 = parse_dsl(
+            "vault create \"Maison Lux\" --kind Brand --description \"Premium watch branding\"",
+        )
+        .unwrap();
+        if let Command::VaultCreate {
+            name,
+            kind,
+            description,
+        } = cmd1
+        {
             assert_eq!(name, "Maison Lux");
             assert_eq!(kind, aether_core::VaultKind::Brand);
             assert_eq!(description, Some("Premium watch branding".to_string()));
@@ -1343,7 +1657,8 @@ mod tests {
             usage,
             tags,
             metadata,
-        } = cmd4 {
+        } = cmd4
+        {
             assert_eq!(vault_id, "maison_lux");
             assert_eq!(asset_name, "Logo Rule");
             assert_eq!(asset_kind, aether_core::VaultAssetKind::DesignRulebook);
@@ -1378,7 +1693,11 @@ mod tests {
     #[test]
     fn test_parser_plan_commands() {
         let cmd1 = parse_dsl("plan create \"Objective to generate promo video\"").unwrap();
-        if let Command::PlanCreate { objective, plan_json } = cmd1 {
+        if let Command::PlanCreate {
+            objective,
+            plan_json,
+        } = cmd1
+        {
             assert_eq!(objective, "Objective to generate promo video");
             assert_eq!(plan_json, None);
         } else {
@@ -1393,7 +1712,11 @@ mod tests {
         }
 
         let cmd3 = parse_dsl("plan revise plan-123 \"Make it 24fps\"").unwrap();
-        if let Command::PlanRevise { plan_id, instruction } = cmd3 {
+        if let Command::PlanRevise {
+            plan_id,
+            instruction,
+        } = cmd3
+        {
             assert_eq!(plan_id, "plan-123");
             assert_eq!(instruction, "Make it 24fps");
         } else {
@@ -1408,7 +1731,12 @@ mod tests {
         }
 
         let cmd5 = parse_dsl("plan check plan-123 S1 --evidence @v1").unwrap();
-        if let Command::PlanCheck { plan_id, step_id, evidence_ref } = cmd5 {
+        if let Command::PlanCheck {
+            plan_id,
+            step_id,
+            evidence_ref,
+        } = cmd5
+        {
             assert_eq!(plan_id, "plan-123");
             assert_eq!(step_id, "S1");
             assert_eq!(evidence_ref.unwrap().to_string(), "@v1");
@@ -1434,12 +1762,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_cli_planner_e2e() {
+        use aether_project::{ProjectCreateSpec, ProjectManager};
         use std::fs;
-        use aether_project::{ProjectManager, ProjectCreateSpec};
 
         // 1. Setup temporary workspace test dir
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let workspace_root = manifest_dir.parent().unwrap().parent().unwrap().to_path_buf();
+        let workspace_root = manifest_dir
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
         let test_dir = workspace_root
             .join("target")
             .join("test_projects")
@@ -1453,7 +1786,7 @@ mod tests {
         let registry_path = test_dir.join("projects.json");
         let mock_home = test_dir.join("mock_home");
         fs::create_dir_all(&mock_home).unwrap();
-        
+
         // Mock HOME and AETHER_PROJECT environment variables
         std::env::set_var("HOME", &mock_home);
         std::env::remove_var("AETHER_PROJECT");
@@ -1471,7 +1804,7 @@ mod tests {
 
         // The PM created it and made it the active project in the custom registry.
         // Set AETHER_PROJECT env variable to this project so default resolution inside the CLI works
-        std::env::set_var("AETHER_PROJECT", &proj_dir.to_string_lossy().to_string());
+        std::env::set_var("AETHER_PROJECT", proj_dir.to_string_lossy().to_string());
 
         // 2. Run 'plan create'
         let cmd_create = parse_dsl("plan create \"Generate story\"").unwrap();

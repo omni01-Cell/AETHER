@@ -52,11 +52,9 @@ pub fn parse_chat_completion_response(raw: &str) -> Result<LlmTurnOutcome, Aethe
         ))
     })?;
 
-    let message = parsed
-        .choices
-        .first()
-        .map(|c| &c.message)
-        .ok_or_else(|| AetherError::OperationFailed("Chat completion: empty choices".to_string()))?;
+    let message = parsed.choices.first().map(|c| &c.message).ok_or_else(|| {
+        AetherError::OperationFailed("Chat completion: empty choices".to_string())
+    })?;
 
     if let Some(ref calls) = message.tool_calls {
         if !calls.is_empty() {
@@ -68,10 +66,7 @@ pub fn parse_chat_completion_response(raw: &str) -> Result<LlmTurnOutcome, Aethe
                         tc.function.name, e
                     ))
                 })?;
-                let id = tc
-                    .id
-                    .clone()
-                    .unwrap_or_else(|| format!("call_{}", i));
+                let id = tc.id.clone().unwrap_or_else(|| format!("call_{}", i));
                 out.push(ToolCallResult {
                     id,
                     name: tc.function.name.clone(),

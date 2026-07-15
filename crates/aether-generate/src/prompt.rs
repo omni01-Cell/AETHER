@@ -101,13 +101,18 @@ mod tests {
             explicit_options: serde_json::json!({}),
         };
 
-        let res = maker.make_prompt(GenerationKind::Image, "cyberpunk street", &ctx).unwrap();
+        let res = maker
+            .make_prompt(GenerationKind::Image, "cyberpunk street", &ctx)
+            .unwrap();
         assert_eq!(res.original_request, "cyberpunk street");
-        assert!(res.professional_prompt.contains("[AI Generation Mode: Image]"));
+        assert!(res
+            .professional_prompt
+            .contains("[AI Generation Mode: Image]"));
         assert!(res.professional_prompt.contains("(Style: neon glowing)"));
-        assert!(res.professional_prompt.contains("[Project Summary: Cyberpunk aesthetic]"));
+        assert!(res
+            .professional_prompt
+            .contains("[Project Summary: Cyberpunk aesthetic]"));
         assert_eq!(res.style, Some("neon glowing".to_string()));
         assert_eq!(res.locale, Some("en".to_string()));
     }
 }
-

@@ -27,11 +27,7 @@ impl AgentsConfigFile {
         let raw = std::fs::read_to_string(&path)
             .map_err(|e| AetherError::IoError(path.display().to_string(), e.to_string()))?;
         let cfg: AgentsConfigFile = serde_json::from_str(&raw).map_err(|e| {
-            AetherError::OperationFailed(format!(
-                "Invalid agents config {}: {}",
-                path.display(),
-                e
-            ))
+            AetherError::OperationFailed(format!("Invalid agents config {}: {}", path.display(), e))
         })?;
         if cfg.schema_version != 1 {
             return Err(AetherError::OperationFailed(format!(
@@ -49,10 +45,7 @@ impl AgentsConfigFile {
 
     pub fn agent(&self, name: &str) -> Result<&AgentModelConfig, AetherError> {
         self.agents.get(name).ok_or_else(|| {
-            AetherError::OperationFailed(format!(
-                "Unknown agent '{}' in agents.v1.json",
-                name
-            ))
+            AetherError::OperationFailed(format!("Unknown agent '{}' in agents.v1.json", name))
         })
     }
 }

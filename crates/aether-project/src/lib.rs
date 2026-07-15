@@ -1,5 +1,7 @@
+use aether_core::{
+    AetherError, ProjectMetadata, ProjectRegistry, ProjectRegistryEntry, ProjectStatus,
+};
 use std::path::{Path, PathBuf};
-use aether_core::{AetherError, ProjectMetadata, ProjectRegistry, ProjectRegistryEntry, ProjectStatus};
 
 #[derive(Debug, Clone)]
 pub struct ProjectCreateSpec {
@@ -44,11 +46,13 @@ impl ProjectManager {
             });
         }
         let content = std::fs::read_to_string(&self.registry_path).map_err(|e| {
-            AetherError::IoError(self.registry_path.to_string_lossy().to_string(), e.to_string())
+            AetherError::IoError(
+                self.registry_path.to_string_lossy().to_string(),
+                e.to_string(),
+            )
         })?;
-        serde_json::from_str(&content).map_err(|e| {
-            AetherError::OperationFailed(format!("Failed to parse registry: {}", e))
-        })
+        serde_json::from_str(&content)
+            .map_err(|e| AetherError::OperationFailed(format!("Failed to parse registry: {}", e)))
     }
 
     /// Saves the project registry atomically to disk.
@@ -62,20 +66,23 @@ impl ProjectManager {
         std::fs::create_dir_all(parent).map_err(|e| {
             AetherError::IoError(parent.to_string_lossy().to_string(), e.to_string())
         })?;
-        
+
         let temp_path = self.registry_path.with_extension("tmp");
         let content = serde_json::to_string_pretty(registry).map_err(|e| {
             AetherError::OperationFailed(format!("Failed to serialize registry: {}", e))
         })?;
-        
+
         std::fs::write(&temp_path, content).map_err(|e| {
             AetherError::IoError(temp_path.to_string_lossy().to_string(), e.to_string())
         })?;
-        
+
         std::fs::rename(&temp_path, &self.registry_path).map_err(|e| {
-            AetherError::IoError(self.registry_path.to_string_lossy().to_string(), e.to_string())
+            AetherError::IoError(
+                self.registry_path.to_string_lossy().to_string(),
+                e.to_string(),
+            )
         })?;
-        
+
         Ok(())
     }
 
@@ -88,16 +95,18 @@ impl ProjectManager {
                 "project.json does not exist".to_string(),
             ));
         }
-        let content = std::fs::read_to_string(&path).map_err(|e| {
-            AetherError::IoError(path.to_string_lossy().to_string(), e.to_string())
-        })?;
+        let content = std::fs::read_to_string(&path)
+            .map_err(|e| AetherError::IoError(path.to_string_lossy().to_string(), e.to_string()))?;
         serde_json::from_str(&content).map_err(|e| {
             AetherError::OperationFailed(format!("Failed to parse project.json: {}", e))
         })
     }
 
     /// Saves the project metadata file inside the project directory.
-    pub fn save_project_json(project_dir: &Path, meta: &ProjectMetadata) -> Result<(), AetherError> {
+    pub fn save_project_json(
+        project_dir: &Path,
+        meta: &ProjectMetadata,
+    ) -> Result<(), AetherError> {
         let aether_dir = project_dir.join(".aether");
         std::fs::create_dir_all(&aether_dir).map_err(|e| {
             AetherError::IoError(aether_dir.to_string_lossy().to_string(), e.to_string())
@@ -106,9 +115,8 @@ impl ProjectManager {
         let content = serde_json::to_string_pretty(meta).map_err(|e| {
             AetherError::OperationFailed(format!("Failed to serialize project.json: {}", e))
         })?;
-        std::fs::write(&path, content).map_err(|e| {
-            AetherError::IoError(path.to_string_lossy().to_string(), e.to_string())
-        })?;
+        std::fs::write(&path, content)
+            .map_err(|e| AetherError::IoError(path.to_string_lossy().to_string(), e.to_string()))?;
         Ok(())
     }
 
@@ -116,19 +124,25 @@ impl ProjectManager {
     pub fn create(&self, spec: ProjectCreateSpec) -> Result<ProjectMetadata, AetherError> {
         let root_dir = match &spec.dir {
             Some(d) => {
-                std::fs::create_dir_all(d).map_err(|e| AetherError::IoError(d.to_string_lossy().to_string(), e.to_string()))?;
-                std::fs::canonicalize(d).map_err(|e| AetherError::IoError(d.to_string_lossy().to_string(), e.to_string()))?
+                std::fs::create_dir_all(d).map_err(|e| {
+                    AetherError::IoError(d.to_string_lossy().to_string(), e.to_string())
+                })?;
+                std::fs::canonicalize(d).map_err(|e| {
+                    AetherError::IoError(d.to_string_lossy().to_string(), e.to_string())
+                })?
             }
             None => {
-                let d = std::env::current_dir().map_err(|e| AetherError::IoError("current_dir".to_string(), e.to_string()))?;
-                std::fs::canonicalize(d).map_err(|e| AetherError::IoError("current_dir".to_string(), e.to_string()))?
+                let d = std::env::current_dir()
+                    .map_err(|e| AetherError::IoError("current_dir".to_string(), e.to_string()))?;
+                std::fs::canonicalize(d)
+                    .map_err(|e| AetherError::IoError("current_dir".to_string(), e.to_string()))?
             }
         };
 
         let has_aether = root_dir.join(".aether").exists();
         let has_db = root_dir.join(".aether/metadata.db").exists();
         let has_meta = root_dir.join(".aether/project.json").exists();
-        
+
         if has_meta && !spec.force {
             let existing = Self::load_project_json(&root_dir)?;
             return Err(AetherError::OperationFailed(format!(
@@ -136,20 +150,22 @@ impl ProjectManager {
                 existing.name, existing.project_id
             )));
         }
-        
+
         if has_db && !has_meta && !spec.adopt && !spec.force {
             return Err(AetherError::OperationFailed(
-                "Directory contains an unmanaged/legacy AETHER database. Use --adopt or --force.".to_string()
+                "Directory contains an unmanaged/legacy AETHER database. Use --adopt or --force."
+                    .to_string(),
             ));
         }
-        
+
         if !has_aether {
             let is_empty = std::fs::read_dir(&root_dir)
                 .map(|mut entries| entries.next().is_none())
                 .unwrap_or(true);
             if !is_empty && !spec.adopt && !spec.force {
                 return Err(AetherError::OperationFailed(
-                    "Directory is not empty. Use --adopt or --force to create project here.".to_string()
+                    "Directory is not empty. Use --adopt or --force to create project here."
+                        .to_string(),
                 ));
             }
         }
@@ -161,7 +177,7 @@ impl ProjectManager {
                 let _ = std::fs::remove_file(&db_path);
             }
         }
-        
+
         // This will create the .aether/ directory and metadata.db, running schema setups
         let _db = aether_persistence::DbManager::new(&aether_dir)?;
 
@@ -187,7 +203,9 @@ impl ProjectManager {
 
         // Update global registry
         let mut registry = self.load_registry()?;
-        registry.projects.retain(|p| p.root != root_dir && p.name != spec.name);
+        registry
+            .projects
+            .retain(|p| p.root != root_dir && p.name != spec.name);
         registry.projects.push(ProjectRegistryEntry {
             project_id: project_id.clone(),
             name: spec.name.clone(),
@@ -204,9 +222,8 @@ impl ProjectManager {
     /// Opens a project by name, ID, or path.
     pub fn open(&self, target: &str) -> Result<ProjectMetadata, AetherError> {
         let resolved_dir = if Path::new(target).exists() {
-            let root = std::fs::canonicalize(target).map_err(|e| {
-                AetherError::IoError(target.to_string(), e.to_string())
-            })?;
+            let root = std::fs::canonicalize(target)
+                .map_err(|e| AetherError::IoError(target.to_string(), e.to_string()))?;
             if !root.join(".aether/project.json").exists() {
                 return Err(AetherError::OperationFailed(format!(
                     "Directory '{}' does not contain an AETHER project (missing project.json)",
@@ -216,8 +233,16 @@ impl ProjectManager {
             root
         } else {
             let registry = self.load_registry()?;
-            let entry = registry.projects.iter().find(|p| p.name == target || p.project_id == target)
-                .ok_or_else(|| AetherError::OperationFailed(format!("Project '{}' not found in registry", target)))?;
+            let entry = registry
+                .projects
+                .iter()
+                .find(|p| p.name == target || p.project_id == target)
+                .ok_or_else(|| {
+                    AetherError::OperationFailed(format!(
+                        "Project '{}' not found in registry",
+                        target
+                    ))
+                })?;
             if !entry.root.exists() {
                 return Err(AetherError::OperationFailed(format!(
                     "Project root directory '{}' does not exist anymore",
@@ -229,13 +254,17 @@ impl ProjectManager {
 
         let meta = Self::load_project_json(&resolved_dir)?;
         let mut registry = self.load_registry()?;
-        
+
         let now = std::time::SystemTime::now()
             .duration_since(std::time::SystemTime::UNIX_EPOCH)
             .unwrap()
             .as_millis() as i64;
 
-        if let Some(entry) = registry.projects.iter_mut().find(|p| p.project_id == meta.project_id) {
+        if let Some(entry) = registry
+            .projects
+            .iter_mut()
+            .find(|p| p.project_id == meta.project_id)
+        {
             entry.status = ProjectStatus::Open;
             entry.last_opened_at_ms = now;
         } else {
@@ -257,7 +286,11 @@ impl ProjectManager {
     pub fn current(&self) -> Result<Option<ProjectMetadata>, AetherError> {
         let registry = self.load_registry()?;
         if let Some(active_id) = &registry.active_project_id {
-            if let Some(entry) = registry.projects.iter().find(|p| p.project_id == *active_id) {
+            if let Some(entry) = registry
+                .projects
+                .iter()
+                .find(|p| p.project_id == *active_id)
+            {
                 if entry.root.exists() {
                     let meta = Self::load_project_json(&entry.root)?;
                     return Ok(Some(meta));
@@ -272,14 +305,23 @@ impl ProjectManager {
         let mut registry = self.load_registry()?;
         let target_id = if let Some(t) = target {
             let entry = if Path::new(t).exists() {
-                let canon = std::fs::canonicalize(t).map_err(|e| AetherError::IoError(t.to_string(), e.to_string()))?;
+                let canon = std::fs::canonicalize(t)
+                    .map_err(|e| AetherError::IoError(t.to_string(), e.to_string()))?;
                 registry.projects.iter().find(|p| p.root == canon)
             } else {
-                registry.projects.iter().find(|p| p.name == t || p.project_id == t)
+                registry
+                    .projects
+                    .iter()
+                    .find(|p| p.name == t || p.project_id == t)
             };
             match entry {
                 Some(e) => Some(e.project_id.clone()),
-                None => return Err(AetherError::OperationFailed(format!("Project '{}' not found", t))),
+                None => {
+                    return Err(AetherError::OperationFailed(format!(
+                        "Project '{}' not found",
+                        t
+                    )))
+                }
             }
         } else {
             registry.active_project_id.clone()
@@ -294,7 +336,9 @@ impl ProjectManager {
             }
             self.save_registry(&registry)?;
         } else {
-            return Err(AetherError::OperationFailed("No active project to close".to_string()));
+            return Err(AetherError::OperationFailed(
+                "No active project to close".to_string(),
+            ));
         }
         Ok(())
     }
@@ -313,79 +357,117 @@ impl ProjectManager {
     /// Deletes or archives a project.
     pub fn delete(&self, target: &str, mode: DeleteMode) -> Result<(), AetherError> {
         let mut registry = self.load_registry()?;
-        
+
         let (index, entry) = if Path::new(target).exists() {
-            let canon = std::fs::canonicalize(target).map_err(|e| AetherError::IoError(target.to_string(), e.to_string()))?;
-            registry.projects.iter().enumerate().find(|(_, p)| p.root == canon)
+            let canon = std::fs::canonicalize(target)
+                .map_err(|e| AetherError::IoError(target.to_string(), e.to_string()))?;
+            registry
+                .projects
+                .iter()
+                .enumerate()
+                .find(|(_, p)| p.root == canon)
                 .map(|(i, p)| (i, p.clone()))
-                .ok_or_else(|| AetherError::OperationFailed(format!("Project path '{}' not found in registry", target)))?
+                .ok_or_else(|| {
+                    AetherError::OperationFailed(format!(
+                        "Project path '{}' not found in registry",
+                        target
+                    ))
+                })?
         } else {
-            registry.projects.iter().enumerate().find(|(_, p)| p.name == target || p.project_id == target)
+            registry
+                .projects
+                .iter()
+                .enumerate()
+                .find(|(_, p)| p.name == target || p.project_id == target)
                 .map(|(i, p)| (i, p.clone()))
-                .ok_or_else(|| AetherError::OperationFailed(format!("Project '{}' not found in registry", target)))?
+                .ok_or_else(|| {
+                    AetherError::OperationFailed(format!(
+                        "Project '{}' not found in registry",
+                        target
+                    ))
+                })?
         };
 
         let project_dir = &entry.root;
         let project_dir_canon = std::fs::canonicalize(project_dir).map_err(|e| {
             AetherError::IoError(project_dir.to_string_lossy().to_string(), e.to_string())
         })?;
-        
+
         // SAFETY CHECKS
         if project_dir_canon.parent().is_none() {
-            return Err(AetherError::OperationFailed("Refusing to delete root directory '/'".to_string()));
+            return Err(AetherError::OperationFailed(
+                "Refusing to delete root directory '/'".to_string(),
+            ));
         }
-        
+
         if let Ok(home) = std::env::var("HOME") {
             if let Ok(home_canon) = std::fs::canonicalize(&home) {
                 if project_dir_canon == home_canon {
-                    return Err(AetherError::OperationFailed("Refusing to delete home directory $HOME".to_string()));
+                    return Err(AetherError::OperationFailed(
+                        "Refusing to delete home directory $HOME".to_string(),
+                    ));
                 }
             }
         }
-        
-        if project_dir_canon.join("Cargo.toml").exists() && project_dir_canon.join("crates").exists() {
-            return Err(AetherError::OperationFailed("Refusing to delete the AETHER repository itself".to_string()));
+
+        if project_dir_canon.join("Cargo.toml").exists()
+            && project_dir_canon.join("crates").exists()
+        {
+            return Err(AetherError::OperationFailed(
+                "Refusing to delete the AETHER repository itself".to_string(),
+            ));
         }
-        
+
         let project_json_path = project_dir_canon.join(".aether/project.json");
         if !project_json_path.exists() {
             return Err(AetherError::OperationFailed(
-                "Target folder is not a valid AETHER project (missing .aether/project.json)".to_string()
+                "Target folder is not a valid AETHER project (missing .aether/project.json)"
+                    .to_string(),
             ));
         }
-        
+
         let disk_meta = Self::load_project_json(&project_dir_canon)?;
         if disk_meta.project_id != entry.project_id {
             return Err(AetherError::OperationFailed(
-                "Project ID mismatch between registry and disk".to_string()
+                "Project ID mismatch between registry and disk".to_string(),
             ));
         }
 
         if registry.active_project_id == Some(entry.project_id.clone()) {
             registry.active_project_id = None;
         }
-        
+
         registry.projects.remove(index);
         self.save_registry(&registry)?;
 
         match mode {
             DeleteMode::Archive => {
-                let home = std::env::var("HOME").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("/home/omni"));
-                let trash_dir = home.join(".local/share/aether/trash").join(format!("{}-{}", entry.name, entry.project_id));
-                
+                let home = std::env::var("HOME")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|_| PathBuf::from("/home/omni"));
+                let trash_dir = home
+                    .join(".local/share/aether/trash")
+                    .join(format!("{}-{}", entry.name, entry.project_id));
+
                 if let Some(parent) = trash_dir.parent() {
                     std::fs::create_dir_all(parent).map_err(|e| {
                         AetherError::IoError(parent.to_string_lossy().to_string(), e.to_string())
                     })?;
                 }
-                
+
                 std::fs::rename(&project_dir_canon, &trash_dir).map_err(|e| {
-                    AetherError::IoError(project_dir_canon.to_string_lossy().to_string(), e.to_string())
+                    AetherError::IoError(
+                        project_dir_canon.to_string_lossy().to_string(),
+                        e.to_string(),
+                    )
                 })?;
             }
             DeleteMode::Force => {
                 std::fs::remove_dir_all(&project_dir_canon).map_err(|e| {
-                    AetherError::IoError(project_dir_canon.to_string_lossy().to_string(), e.to_string())
+                    AetherError::IoError(
+                        project_dir_canon.to_string_lossy().to_string(),
+                        e.to_string(),
+                    )
                 })?;
             }
         }
@@ -399,32 +481,35 @@ impl ProjectManager {
         if let Some(target) = explicit {
             return self.resolve_path(target);
         }
-        
+
         // 2. Env variable AETHER_PROJECT
         if let Ok(target) = std::env::var("AETHER_PROJECT") {
             if !target.is_empty() {
                 return self.resolve_path(&target);
             }
         }
-        
+
         // 3. Active project of global registry
         let registry = self.load_registry()?;
         if let Some(active_id) = &registry.active_project_id {
-            if let Some(entry) = registry.projects.iter().find(|p| p.project_id == *active_id) {
+            if let Some(entry) = registry
+                .projects
+                .iter()
+                .find(|p| p.project_id == *active_id)
+            {
                 if entry.root.exists() {
                     return Ok(entry.root.clone());
                 }
             }
         }
-        
+
         // 4. Current dir if <cwd>/.aether exists
-        let cwd = std::env::current_dir().map_err(|e| {
-            AetherError::IoError("current_dir".to_string(), e.to_string())
-        })?;
+        let cwd = std::env::current_dir()
+            .map_err(|e| AetherError::IoError("current_dir".to_string(), e.to_string()))?;
         if cwd.join(".aether").exists() {
             return Ok(cwd);
         }
-        
+
         // 5. Error
         Err(AetherError::OperationFailed(
             "No active AETHER project. Run 'aether project create <name>' or 'aether project open <name>'".to_string()
@@ -433,21 +518,24 @@ impl ProjectManager {
 
     fn resolve_path(&self, target: &str) -> Result<PathBuf, AetherError> {
         if Path::new(target).exists() {
-            let canon = std::fs::canonicalize(target).map_err(|e| {
-                AetherError::IoError(target.to_string(), e.to_string())
-            })?;
+            let canon = std::fs::canonicalize(target)
+                .map_err(|e| AetherError::IoError(target.to_string(), e.to_string()))?;
             if canon.join(".aether").exists() {
                 return Ok(canon);
             }
         }
-        
+
         let registry = self.load_registry()?;
-        if let Some(entry) = registry.projects.iter().find(|p| p.name == target || p.project_id == target) {
+        if let Some(entry) = registry
+            .projects
+            .iter()
+            .find(|p| p.name == target || p.project_id == target)
+        {
             if entry.root.exists() {
                 return Ok(entry.root.clone());
             }
         }
-        
+
         Err(AetherError::OperationFailed(format!(
             "Could not resolve project target '{}'",
             target
@@ -458,13 +546,18 @@ impl ProjectManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
     use aether_core::ProjectStatus;
+    use std::fs;
 
     fn setup_test_manager(test_name: &str) -> (ProjectManager, PathBuf, PathBuf) {
         // Build path relative to the manifest directory (inside target/test_projects/)
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let workspace_root = manifest_dir.parent().unwrap().parent().unwrap().to_path_buf();
+        let workspace_root = manifest_dir
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
         let test_dir = workspace_root
             .join("target")
             .join("test_projects")
@@ -479,11 +572,15 @@ mod tests {
         let registry_path = test_dir.join("projects.json");
         let mock_home = test_dir.join("mock_home");
         fs::create_dir_all(&mock_home).unwrap();
-        
+
         // Mock HOME so trash archiving stays within the workspace target folder!
         std::env::set_var("HOME", &mock_home);
 
-        (ProjectManager::with_registry_path(registry_path), test_dir, mock_home)
+        (
+            ProjectManager::with_registry_path(registry_path),
+            test_dir,
+            mock_home,
+        )
     }
 
     #[test]
@@ -514,7 +611,10 @@ mod tests {
 
         // 2. Resolve context
         let resolved = pm.resolve_for_command(None).unwrap();
-        assert_eq!(fs::canonicalize(resolved).unwrap(), fs::canonicalize(&p1_dir).unwrap());
+        assert_eq!(
+            fs::canonicalize(resolved).unwrap(),
+            fs::canonicalize(&p1_dir).unwrap()
+        );
 
         // 3. Close project
         pm.close(None).expect("Failed to close active project");
@@ -550,15 +650,22 @@ mod tests {
 
         // Resolve context should return project2
         let resolved = pm.resolve_for_command(None).unwrap();
-        assert_eq!(fs::canonicalize(resolved).unwrap(), fs::canonicalize(&p2_dir).unwrap());
+        assert_eq!(
+            fs::canonicalize(resolved).unwrap(),
+            fs::canonicalize(&p2_dir).unwrap()
+        );
 
         // Switch to project1
         pm.open("project1").expect("Failed to switch to project1");
         let resolved = pm.resolve_for_command(None).unwrap();
-        assert_eq!(fs::canonicalize(resolved).unwrap(), fs::canonicalize(&p1_dir).unwrap());
+        assert_eq!(
+            fs::canonicalize(resolved).unwrap(),
+            fs::canonicalize(&p1_dir).unwrap()
+        );
 
         // 6. Delete project2 via Archive
-        pm.delete("project2", DeleteMode::Archive).expect("Failed to archive project2");
+        pm.delete("project2", DeleteMode::Archive)
+            .expect("Failed to archive project2");
         let registry = pm.load_registry().unwrap();
         assert_eq!(registry.projects.len(), 1);
         assert_eq!(registry.projects[0].name, "project1");
@@ -570,7 +677,8 @@ mod tests {
         assert!(archived_p2.join(".aether/project.json").exists());
 
         // 7. Delete project1 via Force
-        pm.delete("project1", DeleteMode::Force).expect("Failed to force delete project1");
+        pm.delete("project1", DeleteMode::Force)
+            .expect("Failed to force delete project1");
         let registry = pm.load_registry().unwrap();
         assert_eq!(registry.projects.len(), 0);
         assert_eq!(registry.active_project_id, None);

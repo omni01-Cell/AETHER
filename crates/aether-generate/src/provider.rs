@@ -1,6 +1,6 @@
 use aether_core::{
-    AetherError, GenerationArtifact, GenerationJob, GenerationRequest,
-    GenerationStatus, ProviderModel,
+    AetherError, GenerationArtifact, GenerationJob, GenerationRequest, GenerationStatus,
+    ProviderModel,
 };
 
 #[derive(Debug, Clone)]

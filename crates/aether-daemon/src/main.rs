@@ -1,11 +1,11 @@
+use aether_core::{Command, CommandResult};
+use aether_daemon::SessionManager;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::net::{UnixListener, UnixStream};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use serde::{Deserialize, Serialize};
-use aether_core::{Command, CommandResult};
-use aether_daemon::SessionManager;
+use tokio::net::{UnixListener, UnixStream};
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(untagged)]
@@ -55,7 +55,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let listener = UnixListener::bind(&sock_path)?;
-    println!("UDS server listening on socket: {}", sock_path.to_string_lossy());
+    println!(
+        "UDS server listening on socket: {}",
+        sock_path.to_string_lossy()
+    );
 
     loop {
         match listener.accept().await {
@@ -74,7 +77,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-async fn handle_connection(mut stream: UnixStream, session: Arc<SessionManager>) -> Result<(), Box<dyn std::error::Error>> {
+async fn handle_connection(
+    mut stream: UnixStream,
+    session: Arc<SessionManager>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let (reader, mut writer) = stream.split();
     let mut buf_reader = BufReader::new(reader);
     let mut line = String::new();
@@ -88,16 +94,23 @@ async fn handle_connection(mut stream: UnixStream, session: Arc<SessionManager>)
 
         // Parse command request
         let req_parsed: Result<IncomingRequest, _> = serde_json::from_str(trimmed);
-        
+
         let mut is_shutdown = false;
-        
+
         let response_bytes = match req_parsed {
-            Ok(IncomingRequest::JsonRpc { jsonrpc, method, params, id }) => {
+            Ok(IncomingRequest::JsonRpc {
+                jsonrpc,
+                method,
+                params,
+                id,
+            }) => {
                 if method != "execute" {
                     let err_resp = JsonRpcResponse {
                         jsonrpc,
                         result: None,
-                        error: Some("Unknown JSON-RPC method. Only 'execute' is supported.".to_string()),
+                        error: Some(
+                            "Unknown JSON-RPC method. Only 'execute' is supported.".to_string(),
+                        ),
                         id,
                     };
                     serde_json::to_vec(&err_resp)?

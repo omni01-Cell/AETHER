@@ -32,7 +32,10 @@ impl PlannerManager {
 
     /// Resolves the path to the plan file inside the project directory.
     fn plan_path(&self, plan_id: &str) -> PathBuf {
-        self.project_dir.join(".aether").join("plans").join(format!("{}.json", plan_id))
+        self.project_dir
+            .join(".aether")
+            .join("plans")
+            .join(format!("{}.json", plan_id))
     }
 
     /// Helper to ensure the plans directory exists.
@@ -49,7 +52,11 @@ impl PlannerManager {
     /// Creates a new AETHER Plan.
     /// - If `plan_json` is provided, parses it directly.
     /// - Otherwise, generates a structured template customized with attached Vault constraints.
-    pub fn create_plan(&self, objective: &str, plan_json: Option<&str>) -> Result<AetherPlan, AetherError> {
+    pub fn create_plan(
+        &self,
+        objective: &str,
+        plan_json: Option<&str>,
+    ) -> Result<AetherPlan, AetherError> {
         self.ensure_plans_dir()?;
 
         let plan = if let Some(json_content) = plan_json {
@@ -66,14 +73,23 @@ impl PlannerManager {
 
             // Integrate AETHER Vault constraints
             if let Ok(vault_mgr) = aether_vault::VaultManager::load_default() {
-                if let Ok(links) = aether_vault::VaultManager::load_project_links(&self.project_dir) {
+                if let Ok(links) = aether_vault::VaultManager::load_project_links(&self.project_dir)
+                {
                     for link in links.attached_vaults {
-                        assumptions.push(format!("Attached Vault constraint: '{}' linked as '{}'", link.vault_id, link.alias));
+                        assumptions.push(format!(
+                            "Attached Vault constraint: '{}' linked as '{}'",
+                            link.vault_id, link.alias
+                        ));
                         if let Ok(assets) = vault_mgr.load_assets(&link.vault_id) {
                             for asset in assets {
                                 if asset.kind == aether_core::VaultAssetKind::DesignRulebook {
-                                    if let Some(txt) = asset.metadata.get("text").and_then(|t| t.as_str()) {
-                                        assumptions.push(format!("Design rule from vault ({}): {}", link.alias, txt));
+                                    if let Some(txt) =
+                                        asset.metadata.get("text").and_then(|t| t.as_str())
+                                    {
+                                        assumptions.push(format!(
+                                            "Design rule from vault ({}): {}",
+                                            link.alias, txt
+                                        ));
                                     }
                                 }
                             }
@@ -186,9 +202,8 @@ impl PlannerManager {
                 plan_id
             )));
         }
-        let content = fs::read_to_string(&path).map_err(|e| {
-            AetherError::IoError(path.to_string_lossy().to_string(), e.to_string())
-        })?;
+        let content = fs::read_to_string(&path)
+            .map_err(|e| AetherError::IoError(path.to_string_lossy().to_string(), e.to_string()))?;
         serde_json::from_str(&content).map_err(|e| {
             AetherError::OperationFailed(format!("Failed to deserialize plan JSON: {}", e))
         })
@@ -201,9 +216,8 @@ impl PlannerManager {
         let content = serde_json::to_string_pretty(plan).map_err(|e| {
             AetherError::OperationFailed(format!("Failed to serialize plan: {}", e))
         })?;
-        fs::write(&path, content).map_err(|e| {
-            AetherError::IoError(path.to_string_lossy().to_string(), e.to_string())
-        })?;
+        fs::write(&path, content)
+            .map_err(|e| AetherError::IoError(path.to_string_lossy().to_string(), e.to_string()))?;
         Ok(())
     }
 
@@ -212,7 +226,8 @@ impl PlannerManager {
     pub fn revise_plan(&self, plan_id: &str, instruction: &str) -> Result<AetherPlan, AetherError> {
         let mut plan = self.get_plan(plan_id)?;
 
-        plan.assumptions.push(format!("Revision Instruction: {}", instruction));
+        plan.assumptions
+            .push(format!("Revision Instruction: {}", instruction));
         plan.updated_at_ms = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
@@ -282,16 +297,13 @@ impl PlannerManager {
             let mut changed = false;
             for i in 0..plan.steps.len() {
                 if plan.steps[i].status == PlanStepStatus::Pending {
-                    let all_deps_done = plan.steps[i]
-                        .depends_on
-                        .iter()
-                        .all(|dep_id| {
-                            plan.steps
-                                .iter()
-                                .find(|s| s.id == *dep_id)
-                                .map(|s| s.status == PlanStepStatus::Done)
-                                .unwrap_or(false)
-                        });
+                    let all_deps_done = plan.steps[i].depends_on.iter().all(|dep_id| {
+                        plan.steps
+                            .iter()
+                            .find(|s| s.id == *dep_id)
+                            .map(|s| s.status == PlanStepStatus::Done)
+                            .unwrap_or(false)
+                    });
 
                     if all_deps_done {
                         plan.steps[i].status = PlanStepStatus::Ready;
@@ -358,16 +370,13 @@ impl PlannerManager {
         // Evaluate if any step has become ready again (its dependencies are Done)
         for i in 0..plan.steps.len() {
             if plan.steps[i].status == PlanStepStatus::Pending {
-                let all_deps_done = plan.steps[i]
-                    .depends_on
-                    .iter()
-                    .all(|dep_id| {
-                        plan.steps
-                            .iter()
-                            .find(|s| s.id == *dep_id)
-                                .map(|s| s.status == PlanStepStatus::Done)
-                                .unwrap_or(true) // No deps means Done
-                    });
+                let all_deps_done = plan.steps[i].depends_on.iter().all(|dep_id| {
+                    plan.steps
+                        .iter()
+                        .find(|s| s.id == *dep_id)
+                        .map(|s| s.status == PlanStepStatus::Done)
+                        .unwrap_or(true) // No deps means Done
+                });
                 if all_deps_done {
                     plan.steps[i].status = PlanStepStatus::Ready;
                 }
@@ -403,7 +412,12 @@ mod tests {
 
     fn setup_test_project(test_name: &str) -> (PathBuf, PlannerManager) {
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let workspace_root = manifest_dir.parent().unwrap().parent().unwrap().to_path_buf();
+        let workspace_root = manifest_dir
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
         let test_dir = workspace_root
             .join("target")
             .join("test_projects")
@@ -438,7 +452,9 @@ mod tests {
 
         // 2. Check S1 (Ready) -> S2 should become Ready
         let evidence_ref = "@v1".parse::<Ref>().ok();
-        let plan = planner.check_step(&plan.plan_id, "S1", evidence_ref).unwrap();
+        let plan = planner
+            .check_step(&plan.plan_id, "S1", evidence_ref)
+            .unwrap();
         assert_eq!(plan.steps[0].status, PlanStepStatus::Done);
         assert_eq!(plan.steps[1].status, PlanStepStatus::Ready); // Propagated S1 -> S2
 
@@ -459,7 +475,12 @@ mod tests {
         assert_eq!(plan.steps[3].status, PlanStepStatus::Pending);
 
         // 4. Revise plan with hint
-        let plan = planner.revise_plan(&plan.plan_id, "Please use 24fps vertical video").unwrap();
-        assert_eq!(plan.steps[0].command, "init 24.0 1920x1080 srgb".to_string());
+        let plan = planner
+            .revise_plan(&plan.plan_id, "Please use 24fps vertical video")
+            .unwrap();
+        assert_eq!(
+            plan.steps[0].command,
+            "init 24.0 1920x1080 srgb".to_string()
+        );
     }
 }

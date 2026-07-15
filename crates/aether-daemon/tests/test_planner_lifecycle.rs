@@ -1,15 +1,18 @@
-use std::fs;
-use std::path::PathBuf;
-use aether_core::{
-    PlanStatus, PlanStepStatus, Ref, VaultAssetKind, VaultKind, VaultUsage,
-};
+use aether_core::{PlanStatus, PlanStepStatus, Ref, VaultAssetKind, VaultKind, VaultUsage};
+use aether_planner::PlannerManager;
 use aether_project::{ProjectCreateSpec, ProjectManager};
 use aether_vault::VaultManager;
-use aether_planner::PlannerManager;
+use std::fs;
+use std::path::PathBuf;
 
 fn setup_test_project(test_name: &str) -> (PathBuf, PathBuf) {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let workspace_root = manifest_dir.parent().unwrap().parent().unwrap().to_path_buf();
+    let workspace_root = manifest_dir
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf();
     let test_dir = workspace_root
         .join("target")
         .join("test_projects")
@@ -44,7 +47,10 @@ fn test_planner_full_lifecycle_e2e() {
     assert_eq!(project.name, "Marketing Video Teaser");
 
     // Verify it is the current active project
-    let current_proj = pm.current().expect("Failed to get current project").unwrap();
+    let current_proj = pm
+        .current()
+        .expect("Failed to get current project")
+        .unwrap();
     assert_eq!(current_proj.project_id, project.project_id);
 
     // 2. Create a Vault
@@ -97,12 +103,19 @@ fn test_planner_full_lifecycle_e2e() {
     let has_vault_assumption = plan.assumptions.iter().any(|assumption| {
         assumption.contains("teaser_brand_kit") && assumption.contains("brand_kit")
     });
-    assert!(has_vault_assumption, "Vault metadata links should be part of plan assumptions");
+    assert!(
+        has_vault_assumption,
+        "Vault metadata links should be part of plan assumptions"
+    );
 
-    let has_rule_assumption = plan.assumptions.iter().any(|assumption| {
-        assumption.contains("Mandatory: Always include mint-green accent color")
-    });
-    assert!(has_rule_assumption, "Brand rules from vault should be injected into plan assumptions");
+    let has_rule_assumption = plan
+        .assumptions
+        .iter()
+        .any(|assumption| assumption.contains("Mandatory: Always include mint-green accent color"));
+    assert!(
+        has_rule_assumption,
+        "Brand rules from vault should be injected into plan assumptions"
+    );
 
     // 6. Check step states sequentially
     // Step S1 has no dependencies -> should be Ready
@@ -152,7 +165,10 @@ fn test_planner_full_lifecycle_e2e() {
 
     // 7. Test revise_plan functionality
     let plan = planner
-        .revise_plan(&plan.plan_id, "Revise frame: Please use 24fps vertical video")
+        .revise_plan(
+            &plan.plan_id,
+            "Revise frame: Please use 24fps vertical video",
+        )
         .expect("Failed to revise plan");
 
     // S1 command parameters should be revised accordingly
@@ -168,7 +184,7 @@ fn test_planner_full_lifecycle_e2e() {
 
     // S2 transitions back to Ready (dependencies: S1 is still Done)
     assert_eq!(plan.steps[1].status, PlanStepStatus::Ready);
-    
+
     // Downstream steps S3, S4, S5, S6 must transition back to Pending
     assert_eq!(plan.steps[2].status, PlanStepStatus::Pending);
     assert_eq!(plan.steps[3].status, PlanStepStatus::Pending);

@@ -1,0 +1,4 @@
+## 2024-06-25 - Clippy optimizations
+**Learning:** Automatic Clippy linting () with  enabled revealed numerous loop initialization/usage overheads in the  and  subcrates. Converting unnecessary loops mapping over values to proper  chaining eliminates unnecessary tracking variables.
+**Learning:** Automatic Clippy linting with clippy::perf enabled revealed numerous loop initialization/usage overheads in the aether-audio and aether-daemon subcrates. Converting unnecessary loops mapping over values to proper iterator.take() chaining eliminates unnecessary tracking variables.
+**Action:** Before manual optimizations, always run `cargo clippy --workspace --all-targets -- -W clippy::perf` and apply safe, measurable changes like removing manual flatten statements, converting loop ranges, and simplifying replace strings.

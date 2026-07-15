@@ -1,10 +1,10 @@
+use crate::provider::{GenerationProvider, ProviderSubmitResult};
+use aether_core::{
+    AetherError, GeneratedArtifactKind, GenerationArtifact, GenerationJob, GenerationKind,
+    GenerationRequest, GenerationStatus, ProviderModel,
+};
 use std::fs;
 use std::path::PathBuf;
-use aether_core::{
-    AetherError, GeneratedArtifactKind, GenerationArtifact, GenerationJob,
-    GenerationKind, GenerationRequest, GenerationStatus, ProviderModel,
-};
-use crate::provider::{GenerationProvider, ProviderSubmitResult};
 
 #[derive(Debug, Clone)]
 pub struct MockProvider {
@@ -161,4 +161,3 @@ mod tests {
         let _ = std::fs::remove_dir_all(temp_dir);
     }
 }
-

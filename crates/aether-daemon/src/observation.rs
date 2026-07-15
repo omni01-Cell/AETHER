@@ -1,7 +1,7 @@
-use std::path::{Path, PathBuf};
-use tiny_skia::{Pixmap, PixmapPaint, Transform, Color};
-use hound::WavReader;
 use aether_core::{AetherError, Ref};
+use hound::WavReader;
+use std::path::{Path, PathBuf};
+use tiny_skia::{Color, Pixmap, PixmapPaint, Transform};
 
 pub struct ObservationPacket {
     pub asset_ref: Ref,
@@ -32,7 +32,7 @@ pub fn extract_keyframes(
 
     for (i, &t) in times.iter().enumerate() {
         let out_path = output_dir.join(format!("frame_{}.png", i));
-        
+
         let status = std::process::Command::new("ffmpeg")
             .arg("-ss")
             .arg(t.to_string())
@@ -52,17 +52,19 @@ pub fn extract_keyframes(
             }
             _ => {
                 // Graceful fallback: create a robust dummy color frame using tiny-skia
-                let mut pixmap = Pixmap::new(320, 240)
-                    .ok_or_else(|| AetherError::MediaError("Failed to allocate dummy keyframe".to_string()))?;
+                let mut pixmap = Pixmap::new(320, 240).ok_or_else(|| {
+                    AetherError::MediaError("Failed to allocate dummy keyframe".to_string())
+                })?;
                 pixmap.fill(Color::from_rgba8(20, 20, 20, 255));
-                
-                pixmap.save_png(&out_path)
-                    .map_err(|e| AetherError::MediaError(format!("Failed to save dummy keyframe: {}", e)))?;
+
+                pixmap.save_png(&out_path).map_err(|e| {
+                    AetherError::MediaError(format!("Failed to save dummy keyframe: {}", e))
+                })?;
                 paths.push(out_path);
             }
         }
     }
-    
+
     Ok(paths)
 }
 
@@ -73,7 +75,9 @@ pub fn generate_contact_sheet(
     output_path: &Path,
 ) -> Result<(), AetherError> {
     if frames.is_empty() {
-        return Err(AetherError::OperationFailed("Cannot generate contact sheet with zero frames".to_string()));
+        return Err(AetherError::OperationFailed(
+            "Cannot generate contact sheet with zero frames".to_string(),
+        ));
     }
 
     let frame_w = 160;
@@ -81,8 +85,12 @@ pub fn generate_contact_sheet(
     let width = frame_w * cols;
     let height = frame_h * rows;
 
-    let mut sheet = Pixmap::new(width, height)
-        .ok_or_else(|| AetherError::MediaError(format!("Failed to allocate contact sheet pixmap {}x{}", width, height)))?;
+    let mut sheet = Pixmap::new(width, height).ok_or_else(|| {
+        AetherError::MediaError(format!(
+            "Failed to allocate contact sheet pixmap {}x{}",
+            width, height
+        ))
+    })?;
 
     sheet.fill(Color::from_rgba8(15, 15, 15, 255));
 
@@ -99,7 +107,7 @@ pub fn generate_contact_sheet(
                 let scale_y = frame_h as f32 / frame_pixmap.height() as f32;
                 let x = c * frame_w;
                 let y = r * frame_h;
-                
+
                 sheet.draw_pixmap(
                     x as i32,
                     y as i32,
@@ -114,11 +122,13 @@ pub fn generate_contact_sheet(
     }
 
     if let Some(parent) = output_path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| AetherError::IoError(parent.to_string_lossy().to_string(), e.to_string()))?;
+        std::fs::create_dir_all(parent).map_err(|e| {
+            AetherError::IoError(parent.to_string_lossy().to_string(), e.to_string())
+        })?;
     }
 
-    sheet.save_png(output_path)
+    sheet
+        .save_png(output_path)
         .map_err(|e| AetherError::MediaError(format!("Failed to save contact sheet PNG: {}", e)))?;
 
     Ok(())
@@ -156,10 +166,8 @@ pub fn analyze_audio_rms(audio_path: &Path) -> Result<Vec<f32>, AetherError> {
     let got_ffmpeg_wav = match status {
         Ok(s) if s.success() && temp_wav.exists() => {
             if let Ok(mut reader) = WavReader::open(&temp_wav) {
-                for sample in reader.samples::<i16>() {
-                    if let Ok(val) = sample {
-                        samples.push(val as f32 / 32768.0);
-                    }
+                for val in reader.samples::<i16>().flatten() {
+                    samples.push(val as f32 / 32768.0);
                 }
                 true
             } else {
@@ -176,10 +184,8 @@ pub fn analyze_audio_rms(audio_path: &Path) -> Result<Vec<f32>, AetherError> {
     // Direct WAV fallback
     if !got_ffmpeg_wav {
         if let Ok(mut reader) = WavReader::open(audio_path) {
-            for sample in reader.samples::<i16>() {
-                if let Ok(val) = sample {
-                    samples.push(val as f32 / 32768.0);
-                }
+            for val in reader.samples::<i16>().flatten() {
+                samples.push(val as f32 / 32768.0);
             }
         }
     }
@@ -203,10 +209,7 @@ pub fn analyze_audio_rms(audio_path: &Path) -> Result<Vec<f32>, AetherError> {
     Ok(rms_vals)
 }
 
-pub fn detect_anomalies(
-    rms: &[f32],
-    video_frames: &[PathBuf],
-) -> Result<Vec<String>, AetherError> {
+pub fn detect_anomalies(rms: &[f32], video_frames: &[PathBuf]) -> Result<Vec<String>, AetherError> {
     let mut anomalies = Vec::new();
 
     // 1. Audio Silence Detection
@@ -270,10 +273,7 @@ fn is_black_frame(path: &Path) -> bool {
     false
 }
 
-pub fn generate_video_proxy(
-    video_path: &Path,
-    output_path: &Path,
-) -> Result<PathBuf, AetherError> {
+pub fn generate_video_proxy(video_path: &Path, output_path: &Path) -> Result<PathBuf, AetherError> {
     if !video_path.exists() {
         return Err(AetherError::IoError(
             video_path.to_string_lossy().to_string(),
@@ -282,8 +282,9 @@ pub fn generate_video_proxy(
     }
 
     if let Some(parent) = output_path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| AetherError::IoError(parent.to_string_lossy().to_string(), e.to_string()))?;
+        std::fs::create_dir_all(parent).map_err(|e| {
+            AetherError::IoError(parent.to_string_lossy().to_string(), e.to_string())
+        })?;
     }
 
     // Try first with timecode (BITC)
@@ -317,8 +318,13 @@ pub fn generate_video_proxy(
 
             match fallback_status {
                 Ok(s) if s.success() && output_path.exists() => Ok(output_path.to_path_buf()),
-                Ok(_) => Err(AetherError::MediaError("FFmpeg fallback execution failed".to_string())),
-                Err(e) => Err(AetherError::MediaError(format!("Failed to run FFmpeg fallback: {}", e))),
+                Ok(_) => Err(AetherError::MediaError(
+                    "FFmpeg fallback execution failed".to_string(),
+                )),
+                Err(e) => Err(AetherError::MediaError(format!(
+                    "Failed to run FFmpeg fallback: {}",
+                    e
+                ))),
             }
         }
     }
@@ -336,8 +342,9 @@ pub fn generate_audio_proxy(
     }
 
     if let Some(parent) = output_path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| AetherError::IoError(parent.to_string_lossy().to_string(), e.to_string()))?;
+        std::fs::create_dir_all(parent).map_err(|e| {
+            AetherError::IoError(parent.to_string_lossy().to_string(), e.to_string())
+        })?;
     }
 
     let status = std::process::Command::new("ffmpeg")
@@ -354,8 +361,13 @@ pub fn generate_audio_proxy(
 
     match status {
         Ok(s) if s.success() && output_path.exists() => Ok(output_path.to_path_buf()),
-        Ok(_) => Err(AetherError::MediaError("FFmpeg audio proxy generation failed".to_string())),
-        Err(e) => Err(AetherError::MediaError(format!("Failed to run FFmpeg for audio proxy: {}", e))),
+        Ok(_) => Err(AetherError::MediaError(
+            "FFmpeg audio proxy generation failed".to_string(),
+        )),
+        Err(e) => Err(AetherError::MediaError(format!(
+            "Failed to run FFmpeg for audio proxy: {}",
+            e
+        ))),
     }
 }
 
@@ -368,7 +380,7 @@ pub fn detect_audio_transients(rms: &[f32], fps: f32) -> Vec<f32> {
     for i in 0..rms.len() {
         let val = rms[i];
         if val > 0.1 {
-            let start = if i >= 5 { i - 5 } else { 0 };
+            let start = i.saturating_sub(5);
             let count = i - start;
             if count > 0 {
                 let sum: f32 = rms[start..i].iter().sum();
@@ -394,6 +406,3 @@ mod tests {
         assert!((transients[0] - 0.2).abs() < 1e-5);
     }
 }
-
-
-

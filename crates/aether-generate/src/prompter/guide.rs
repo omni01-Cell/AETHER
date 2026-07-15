@@ -110,12 +110,14 @@ pub fn resolve_guides_dir() -> Result<PathBuf, AetherError> {
 
 pub fn load_system_template(guides_dir: &Path) -> Result<String, AetherError> {
     let path = guides_dir.join("system.md");
-    std::fs::read_to_string(&path).map_err(|e| {
-        AetherError::IoError(path.display().to_string(), e.to_string())
-    })
+    std::fs::read_to_string(&path)
+        .map_err(|e| AetherError::IoError(path.display().to_string(), e.to_string()))
 }
 
-pub fn load_guide_for_model(model_id: &str, guides_dir: &Path) -> Result<ModelPromptGuide, AetherError> {
+pub fn load_guide_for_model(
+    model_id: &str,
+    guides_dir: &Path,
+) -> Result<ModelPromptGuide, AetherError> {
     let (provider, name) = model_id.split_once('/').ok_or_else(|| {
         AetherError::OperationFailed(format!("Invalid model_id for guide load: {}", model_id))
     })?;

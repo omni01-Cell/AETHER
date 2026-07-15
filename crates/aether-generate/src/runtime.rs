@@ -1,15 +1,13 @@
-use std::path::PathBuf;
-use std::time::SystemTime;
-use aether_core::{
-    AetherError, GenerationJob, GenerationRequest, GenerationStatus,
-};
 use crate::bridge::BridgeGenerationProvider;
-use crate::mock::MockProvider;
 use crate::composite_prompt_maker::CompositePromptMaker;
+use crate::mock::MockProvider;
 use crate::prompt::{PromptMaker, PromptMakerContext};
 use crate::provider::GenerationProvider;
 use crate::registry::ModelRegistry;
 use crate::routing_provider::RoutingGenerationProvider;
+use aether_core::{AetherError, GenerationJob, GenerationRequest, GenerationStatus};
+use std::path::PathBuf;
+use std::time::SystemTime;
 
 pub struct GenerationRuntime<P, M>
 where
@@ -50,9 +48,21 @@ where
         let mut resolved_model = route.primary.model.clone();
 
         // 2. Prompt Context and Security Validation
-        let locale = request.options.get("locale").and_then(|v| v.as_str()).map(String::from);
-        let style_hint = request.options.get("style").and_then(|v| v.as_str()).map(String::from);
-        let project_summary = request.options.get("project_summary").and_then(|v| v.as_str()).map(String::from);
+        let locale = request
+            .options
+            .get("locale")
+            .and_then(|v| v.as_str())
+            .map(String::from);
+        let style_hint = request
+            .options
+            .get("style")
+            .and_then(|v| v.as_str())
+            .map(String::from);
+        let project_summary = request
+            .options
+            .get("project_summary")
+            .and_then(|v| v.as_str())
+            .map(String::from);
 
         let vault_context = request
             .options
@@ -65,9 +75,15 @@ where
             for v_ctx in &vc.vault_context {
                 for asset in &v_ctx.reference_assets {
                     if let serde_json::Value::Object(ref meta) = asset.metadata {
-                        if meta.get("restricted").and_then(|r| r.as_bool()).unwrap_or(false) {
+                        if meta
+                            .get("restricted")
+                            .and_then(|r| r.as_bool())
+                            .unwrap_or(false)
+                        {
                             // Check allowed_providers
-                            if let Some(allowed) = meta.get("allowed_providers").and_then(|a| a.as_array()) {
+                            if let Some(allowed) =
+                                meta.get("allowed_providers").and_then(|a| a.as_array())
+                            {
                                 let allowed_str: Vec<String> = allowed
                                     .iter()
                                     .filter_map(|v| v.as_str().map(|s| s.to_string()))
@@ -80,7 +96,9 @@ where
                                 }
                             }
                             // Check disallowed_providers
-                            if let Some(disallowed) = meta.get("disallowed_providers").and_then(|d| d.as_array()) {
+                            if let Some(disallowed) =
+                                meta.get("disallowed_providers").and_then(|d| d.as_array())
+                            {
                                 let disallowed_str: Vec<String> = disallowed
                                     .iter()
                                     .filter_map(|v| v.as_str().map(|s| s.to_string()))
@@ -138,32 +156,33 @@ where
             let mut ctx = base_context.clone();
             ctx.target_model_id = Some(candidate.model.id.clone());
 
-            let prompt = match self
-                .prompt_maker
-                .make_prompt(request.kind, &request.user_request, &ctx)
-            {
-                Ok(p) => p,
-                Err(AetherError::PrompterNeedsClarification(payload)) => {
-                    job.status = GenerationStatus::AwaitingClarification;
-                    job.resolved_model = Some(candidate.model.clone());
-                    if let Ok(clar) = serde_json::from_str::<serde_json::Value>(&payload) {
-                        if let serde_json::Value::Object(ref mut map) = job.options {
-                            map.insert("prompter_clarifications".to_string(), clar);
-                        } else {
-                            job.options = serde_json::json!({ "prompter_clarifications": clar });
+            let prompt =
+                match self
+                    .prompt_maker
+                    .make_prompt(request.kind, &request.user_request, &ctx)
+                {
+                    Ok(p) => p,
+                    Err(AetherError::PrompterNeedsClarification(payload)) => {
+                        job.status = GenerationStatus::AwaitingClarification;
+                        job.resolved_model = Some(candidate.model.clone());
+                        if let Ok(clar) = serde_json::from_str::<serde_json::Value>(&payload) {
+                            if let serde_json::Value::Object(ref mut map) = job.options {
+                                map.insert("prompter_clarifications".to_string(), clar);
+                            } else {
+                                job.options =
+                                    serde_json::json!({ "prompter_clarifications": clar });
+                            }
                         }
+                        job.error =
+                            Some("Prompter needs clarification before image API call".to_string());
+                        job.updated_at_ms = SystemTime::now()
+                            .duration_since(SystemTime::UNIX_EPOCH)
+                            .map(|d| d.as_millis() as u64)
+                            .unwrap_or(0);
+                        return Ok(job);
                     }
-                    job.error = Some(
-                        "Prompter needs clarification before image API call".to_string(),
-                    );
-                    job.updated_at_ms = SystemTime::now()
-                        .duration_since(SystemTime::UNIX_EPOCH)
-                        .map(|d| d.as_millis() as u64)
-                        .unwrap_or(0);
-                    return Ok(job);
-                }
-                Err(e) => return Err(e),
-            };
+                    Err(e) => return Err(e),
+                };
 
             let mut req_for_provider = request.clone();
             if !req_for_provider.options.is_object() {
@@ -188,12 +207,7 @@ where
                     "professional_prompt".to_string(),
                     serde_json::Value::String(prompt.professional_prompt.clone()),
                 );
-                if route
-                    .fallback
-                    .as_ref()
-                    .map(|f| &f.model.id)
-                    == Some(&candidate.model.id)
-                {
+                if route.fallback.as_ref().map(|f| &f.model.id) == Some(&candidate.model.id) {
                     map.insert("used_fallback_model".to_string(), serde_json::json!(true));
                 }
             }
@@ -257,7 +271,10 @@ where
     }
 }
 
-fn merge_api_options(target: &mut serde_json::Map<String, serde_json::Value>, api_opts: &serde_json::Value) {
+fn merge_api_options(
+    target: &mut serde_json::Map<String, serde_json::Value>,
+    api_opts: &serde_json::Value,
+) {
     if let Some(obj) = api_opts.as_object() {
         for (provider, params) in obj {
             match target.get_mut(provider) {
@@ -316,7 +333,7 @@ impl DefaultGenerationRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aether_core::{Ref, GenerationKind, GenerationStatus};
+    use aether_core::{GenerationKind, GenerationStatus, Ref};
 
     #[test]
     fn test_generation_runtime_run_to_completion() {
@@ -342,8 +359,12 @@ mod tests {
         assert_eq!(job.resolved_model.as_ref().unwrap().id, "mock/storyboard");
         assert!(job.prompt.is_some());
         let prompt_obj = job.prompt.as_ref().unwrap();
-        assert!(prompt_obj.professional_prompt.contains("[AI Generation Mode: StoryboardScratch]"));
-        assert!(prompt_obj.professional_prompt.contains("(Style: cinematic)"));
+        assert!(prompt_obj
+            .professional_prompt
+            .contains("[AI Generation Mode: StoryboardScratch]"));
+        assert!(prompt_obj
+            .professional_prompt
+            .contains("(Style: cinematic)"));
         assert_eq!(prompt_obj.locale, Some("fr".to_string()));
 
         assert_eq!(job.artifacts.len(), 1);
@@ -360,4 +381,3 @@ mod tests {
         let _ = std::fs::remove_dir_all(temp_dir);
     }
 }
-

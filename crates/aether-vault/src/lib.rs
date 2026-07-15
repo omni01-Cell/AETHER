@@ -1,9 +1,9 @@
-use std::path::{Path, PathBuf};
-use std::fs;
 use aether_core::{
     AetherError, PromptContext, Vault, VaultAsset, VaultAssetKind, VaultAssetRef, VaultKind,
     VaultLink, VaultLinks, VaultPromptContext, VaultUsage,
 };
+use std::fs;
+use std::path::{Path, PathBuf};
 
 pub struct VaultManager {
     registry_path: PathBuf,
@@ -18,7 +18,10 @@ impl VaultManager {
             .unwrap_or_else(|_| PathBuf::from("/home/omni"));
         let registry_path = home.join(".config/aether/vaults.json");
         let storage_root = home.join(".local/share/aether/vaults");
-        Ok(VaultManager { registry_path, storage_root })
+        Ok(VaultManager {
+            registry_path,
+            storage_root,
+        })
     }
 
     /// Loads the VaultManager using a custom registry path (primarily for testing).
@@ -34,12 +37,18 @@ impl VaultManager {
                     .unwrap_or_else(|_| PathBuf::from("/home/omni"));
                 home.join(".local/share/aether/vaults")
             });
-        VaultManager { registry_path, storage_root }
+        VaultManager {
+            registry_path,
+            storage_root,
+        }
     }
 
     /// Loads the VaultManager using custom registry and storage root paths.
     pub fn with_paths(registry_path: PathBuf, storage_root: PathBuf) -> Self {
-        VaultManager { registry_path, storage_root }
+        VaultManager {
+            registry_path,
+            storage_root,
+        }
     }
 
     /// Helper to resolve the vault storage root path.
@@ -53,11 +62,13 @@ impl VaultManager {
             return Ok(Vec::new());
         }
         let content = fs::read_to_string(&self.registry_path).map_err(|e| {
-            AetherError::IoError(self.registry_path.to_string_lossy().to_string(), e.to_string())
+            AetherError::IoError(
+                self.registry_path.to_string_lossy().to_string(),
+                e.to_string(),
+            )
         })?;
-        serde_json::from_str(&content).map_err(|e| {
-            AetherError::VaultError(format!("Failed to parse vault registry: {}", e))
-        })
+        serde_json::from_str(&content)
+            .map_err(|e| AetherError::VaultError(format!("Failed to parse vault registry: {}", e)))
     }
 
     /// Saves the global vault registry.
@@ -71,18 +82,29 @@ impl VaultManager {
             AetherError::VaultError(format!("Failed to serialize vault registry: {}", e))
         })?;
         fs::write(&self.registry_path, content).map_err(|e| {
-            AetherError::IoError(self.registry_path.to_string_lossy().to_string(), e.to_string())
+            AetherError::IoError(
+                self.registry_path.to_string_lossy().to_string(),
+                e.to_string(),
+            )
         })?;
         Ok(())
     }
 
     /// Creates a new AETHER Vault.
-    pub fn create_vault(&self, name: &str, kind: VaultKind, description: Option<String>) -> Result<Vault, AetherError> {
+    pub fn create_vault(
+        &self,
+        name: &str,
+        kind: VaultKind,
+        description: Option<String>,
+    ) -> Result<Vault, AetherError> {
         let mut vaults = self.load_registry()?;
         let vault_id = name.to_lowercase().replace(' ', "_");
 
         if vaults.iter().any(|v| v.vault_id == vault_id) {
-            return Err(AetherError::VaultError(format!("Vault with ID '{}' already exists", vault_id)));
+            return Err(AetherError::VaultError(format!(
+                "Vault with ID '{}' already exists",
+                vault_id
+            )));
         }
 
         let vault_dir = self.vault_storage_root().join(&vault_id);
@@ -138,10 +160,16 @@ impl VaultManager {
             return Ok(Vec::new());
         }
         let content = fs::read_to_string(&assets_json_path).map_err(|e| {
-            AetherError::IoError(assets_json_path.to_string_lossy().to_string(), e.to_string())
+            AetherError::IoError(
+                assets_json_path.to_string_lossy().to_string(),
+                e.to_string(),
+            )
         })?;
         serde_json::from_str(&content).map_err(|e| {
-            AetherError::VaultError(format!("Failed to parse assets.json for vault '{}': {}", vault_id, e))
+            AetherError::VaultError(format!(
+                "Failed to parse assets.json for vault '{}': {}",
+                vault_id, e
+            ))
         })
     }
 
@@ -150,10 +178,16 @@ impl VaultManager {
         let vault_dir = self.vault_storage_root().join(vault_id);
         let assets_json_path = vault_dir.join("assets.json");
         let content = serde_json::to_string_pretty(assets).map_err(|e| {
-            AetherError::VaultError(format!("Failed to serialize assets.json for vault '{}': {}", vault_id, e))
+            AetherError::VaultError(format!(
+                "Failed to serialize assets.json for vault '{}': {}",
+                vault_id, e
+            ))
         })?;
         fs::write(&assets_json_path, content).map_err(|e| {
-            AetherError::IoError(assets_json_path.to_string_lossy().to_string(), e.to_string())
+            AetherError::IoError(
+                assets_json_path.to_string_lossy().to_string(),
+                e.to_string(),
+            )
         })?;
         Ok(())
     }
@@ -171,7 +205,10 @@ impl VaultManager {
     ) -> Result<VaultAsset, AetherError> {
         let vaults = self.load_registry()?;
         if !vaults.iter().any(|v| v.vault_id == vault_id) {
-            return Err(AetherError::VaultError(format!("Vault '{}' not found", vault_id)));
+            return Err(AetherError::VaultError(format!(
+                "Vault '{}' not found",
+                vault_id
+            )));
         }
 
         if !source_path.exists() {
@@ -240,7 +277,10 @@ impl VaultManager {
     ) -> Result<VaultAsset, AetherError> {
         let vaults = self.load_registry()?;
         if !vaults.iter().any(|v| v.vault_id == vault_id) {
-            return Err(AetherError::VaultError(format!("Vault '{}' not found", vault_id)));
+            return Err(AetherError::VaultError(format!(
+                "Vault '{}' not found",
+                vault_id
+            )));
         }
 
         let hash = blake3::hash(text.as_bytes()).to_hex().to_string();
@@ -260,7 +300,10 @@ impl VaultManager {
             .as_millis() as i64;
 
         if let serde_json::Value::Object(ref mut map) = metadata {
-            map.insert("text".to_string(), serde_json::Value::String(text.to_string()));
+            map.insert(
+                "text".to_string(),
+                serde_json::Value::String(text.to_string()),
+            );
         }
 
         let asset = VaultAsset {
@@ -293,9 +336,8 @@ impl VaultManager {
                 attached_vaults: Vec::new(),
             });
         }
-        let content = fs::read_to_string(&path).map_err(|e| {
-            AetherError::IoError(path.to_string_lossy().to_string(), e.to_string())
-        })?;
+        let content = fs::read_to_string(&path)
+            .map_err(|e| AetherError::IoError(path.to_string_lossy().to_string(), e.to_string()))?;
         serde_json::from_str(&content).map_err(|e| {
             AetherError::VaultError(format!("Failed to parse vault_links.json: {}", e))
         })
@@ -311,17 +353,24 @@ impl VaultManager {
         let content = serde_json::to_string_pretty(links).map_err(|e| {
             AetherError::VaultError(format!("Failed to serialize vault_links.json: {}", e))
         })?;
-        fs::write(&path, content).map_err(|e| {
-            AetherError::IoError(path.to_string_lossy().to_string(), e.to_string())
-        })?;
+        fs::write(&path, content)
+            .map_err(|e| AetherError::IoError(path.to_string_lossy().to_string(), e.to_string()))?;
         Ok(())
     }
 
     /// Attaches a Vault to a project.
-    pub fn attach_vault(&self, project_dir: &Path, vault_id: &str, alias: &str) -> Result<(), AetherError> {
+    pub fn attach_vault(
+        &self,
+        project_dir: &Path,
+        vault_id: &str,
+        alias: &str,
+    ) -> Result<(), AetherError> {
         let vaults = self.load_registry()?;
         if !vaults.iter().any(|v| v.vault_id == vault_id) {
-            return Err(AetherError::VaultError(format!("Vault '{}' not found", vault_id)));
+            return Err(AetherError::VaultError(format!(
+                "Vault '{}' not found",
+                vault_id
+            )));
         }
 
         let mut links = Self::load_project_links(project_dir)?;
@@ -347,7 +396,10 @@ impl VaultManager {
         links.attached_vaults.retain(|l| l.vault_id != vault_id);
 
         if links.attached_vaults.len() == before_len {
-            return Err(AetherError::VaultError(format!("Vault '{}' was not attached to this project", vault_id)));
+            return Err(AetherError::VaultError(format!(
+                "Vault '{}' was not attached to this project",
+                vault_id
+            )));
         }
 
         Self::save_project_links(project_dir, &links)?;
@@ -430,12 +482,17 @@ impl VaultManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
     use aether_core::VaultKind;
+    use std::fs;
 
     fn setup_test_manager(test_name: &str) -> (VaultManager, PathBuf) {
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let workspace_root = manifest_dir.parent().unwrap().parent().unwrap().to_path_buf();
+        let workspace_root = manifest_dir
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
         let test_dir = workspace_root
             .join("target")
             .join("test_vaults")
@@ -448,7 +505,10 @@ mod tests {
 
         let registry_path = test_dir.join("vaults.json");
         let storage_root = test_dir.join("vaults");
-        (VaultManager::with_paths(registry_path, storage_root), test_dir)
+        (
+            VaultManager::with_paths(registry_path, storage_root),
+            test_dir,
+        )
     }
 
     #[test]
@@ -457,7 +517,11 @@ mod tests {
 
         // 1. Create Brand Vault
         let vault = vm
-            .create_vault("Maison Lux Time", VaultKind::Brand, Some("Luxurious Brand Kit".to_string()))
+            .create_vault(
+                "Maison Lux Time",
+                VaultKind::Brand,
+                Some("Luxurious Brand Kit".to_string()),
+            )
             .expect("Failed to create vault");
         assert_eq!(vault.vault_id, "maison_lux_time");
         assert_eq!(vault.name, "Maison Lux Time");
@@ -519,7 +583,8 @@ mod tests {
         assert!(links.attached_vaults.is_empty());
 
         // Attach vault
-        vm.attach_vault(&project_dir, "maison_lux_time", "brand").unwrap();
+        vm.attach_vault(&project_dir, "maison_lux_time", "brand")
+            .unwrap();
         let links = VaultManager::load_project_links(&project_dir).unwrap();
         assert_eq!(links.attached_vaults.len(), 1);
         assert_eq!(links.attached_vaults[0].vault_id, "maison_lux_time");
@@ -532,7 +597,10 @@ mod tests {
         assert_eq!(context.vault_context[0].rules.len(), 1);
         assert!(context.vault_context[0].rules[0].contains("Never stretch the logo"));
         assert_eq!(context.vault_context[0].reference_assets.len(), 1);
-        assert_eq!(context.vault_context[0].reference_assets[0].name, "Primary Logo");
+        assert_eq!(
+            context.vault_context[0].reference_assets[0].name,
+            "Primary Logo"
+        );
 
         // Detach vault
         vm.detach_vault(&project_dir, "maison_lux_time").unwrap();
@@ -598,7 +666,8 @@ mod tests {
         // 5. Setup project and attach
         let project_dir = test_dir.join("my_proj");
         fs::create_dir_all(&project_dir).unwrap();
-        vm.attach_vault(&project_dir, "maison_lux_time", "brand").unwrap();
+        vm.attach_vault(&project_dir, "maison_lux_time", "brand")
+            .unwrap();
 
         // 6. Compile PromptContext
         let prompt_context = vm.compile_prompt_context(&project_dir).unwrap();
@@ -620,8 +689,12 @@ mod tests {
             .unwrap();
 
         println!("DEBUG PROMPT IS: {}", enriched.professional_prompt);
-        assert!(enriched.professional_prompt.contains("[AI Generation Mode: Image] a watch on desk"));
-        assert!(enriched.professional_prompt.contains("[Rules: Never stretch the logo.]"));
+        assert!(enriched
+            .professional_prompt
+            .contains("[AI Generation Mode: Image] a watch on desk"));
+        assert!(enriched
+            .professional_prompt
+            .contains("[Rules: Never stretch the logo.]"));
         assert!(enriched.negative_prompt.unwrap().contains("no bright neon"));
 
         // 8. Test runtime provider restrictions checking
@@ -642,7 +715,10 @@ mod tests {
             options: options.clone(),
         };
         let res_ok = generator.run_to_completion(req_ok);
-        assert!(res_ok.is_ok(), "Should allow 'mock' provider since it is explicitly allowed");
+        assert!(
+            res_ok.is_ok(),
+            "Should allow 'mock' provider since it is explicitly allowed"
+        );
 
         // Unsafe provider: let's resolve to a provider not allowed or disallowed
         // Let's register a model with provider "public-image-api" which is explicitly disallowed!
@@ -653,7 +729,11 @@ mod tests {
             enabled: true,
             capabilities: serde_json::json!({}),
         };
-        generator.runtime.model_registry.models.push(disallowed_model);
+        generator
+            .runtime
+            .model_registry
+            .models
+            .push(disallowed_model);
 
         let req_fail = GenerationRequest {
             job_ref: "@g2".parse().unwrap(),
@@ -664,9 +744,11 @@ mod tests {
             options,
         };
         let res_fail = generator.run_to_completion(req_fail);
-        assert!(res_fail.is_err(), "Should disallow unsafe provider 'public-image-api'");
+        assert!(
+            res_fail.is_err(),
+            "Should disallow unsafe provider 'public-image-api'"
+        );
         let err_msg = format!("{}", res_fail.unwrap_err());
         assert!(err_msg.contains("Security violation: Vault asset 'Watermark Logo' is restricted"));
     }
 }
-

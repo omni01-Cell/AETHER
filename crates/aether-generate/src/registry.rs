@@ -23,8 +23,7 @@ fn bytedance_enabled() -> bool {
 }
 
 fn kuaishou_enabled() -> bool {
-    env_present("AETHER_KUAISHOU_API_KEY")
-        || env_present("KLING_API_KEY")
+    env_present("AETHER_KUAISHOU_API_KEY") || env_present("KLING_API_KEY")
 }
 
 fn elevenlabs_enabled() -> bool {
@@ -134,10 +133,7 @@ impl ModelRegistry {
         }
 
         // ElevenLabs — voice generation (primary)
-        let elevenlabs_kinds = vec![
-            GenerationKind::Voice,
-            GenerationKind::VoiceClone,
-        ];
+        let elevenlabs_kinds = vec![GenerationKind::Voice, GenerationKind::VoiceClone];
         for kind in elevenlabs_kinds {
             models.push(ProviderModel {
                 id: "elevenlabs/eleven-v3".to_string(),
@@ -242,9 +238,7 @@ impl ModelRegistry {
     /// Default model id for a kind when the user does not pass `--model`.
     pub fn default_model_id(&self, kind: GenerationKind) -> Option<String> {
         match kind {
-            GenerationKind::ImageEdit if openai_enabled() => {
-                Some("openai/gpt-image-2".to_string())
-            }
+            GenerationKind::ImageEdit if openai_enabled() => Some("openai/gpt-image-2".to_string()),
             GenerationKind::ImageEdit if google_enabled() => {
                 Some("google/gemini-3.1-flash-image-preview".to_string())
             }
@@ -265,9 +259,17 @@ impl ModelRegistry {
     }
 
     /// Invariant: must find and return an enabled model compatible with the given GenerationKind, prioritizing the requested_model if provided and enabled.
-    pub fn find_model(&self, kind: GenerationKind, requested_model: Option<&str>) -> Option<ProviderModel> {
+    pub fn find_model(
+        &self,
+        kind: GenerationKind,
+        requested_model: Option<&str>,
+    ) -> Option<ProviderModel> {
         if let Some(req_id) = requested_model {
-            if let Some(m) = self.models.iter().find(|m| m.id == req_id && m.kind == kind && m.enabled) {
+            if let Some(m) = self
+                .models
+                .iter()
+                .find(|m| m.id == req_id && m.kind == kind && m.enabled)
+            {
                 return Some(m.clone());
             }
         }
@@ -281,12 +283,19 @@ impl ModelRegistry {
             }
         }
         // Fallback to first enabled model of this kind (mock first in list order)
-        self.models.iter().find(|m| m.kind == kind && m.enabled).cloned()
+        self.models
+            .iter()
+            .find(|m| m.kind == kind && m.enabled)
+            .cloned()
     }
 
     /// Invariant: must return a list of all models matching the specified GenerationKind.
     pub fn list_by_kind(&self, kind: GenerationKind) -> Vec<ProviderModel> {
-        self.models.iter().filter(|m| m.kind == kind).cloned().collect()
+        self.models
+            .iter()
+            .filter(|m| m.kind == kind)
+            .cloned()
+            .collect()
     }
 }
 
@@ -298,7 +307,9 @@ mod tests {
     fn test_model_registry() {
         let registry = ModelRegistry::with_builtin_placeholders();
         // Check that a mock model is found and enabled
-        let mock_video = registry.find_model(GenerationKind::VideoText, None).unwrap();
+        let mock_video = registry
+            .find_model(GenerationKind::VideoText, None)
+            .unwrap();
         assert_eq!(mock_video.provider, "mock");
         assert_eq!(mock_video.id, "mock/video-text");
         assert!(mock_video.enabled);
@@ -314,7 +325,9 @@ mod tests {
         assert!(!google_veo.enabled);
 
         // Trying to find google/veo-3 should fallback to mock/video-text because google/veo-3 is disabled
-        let resolved = registry.find_model(GenerationKind::VideoText, Some("google/veo-3")).unwrap();
+        let resolved = registry
+            .find_model(GenerationKind::VideoText, Some("google/veo-3"))
+            .unwrap();
         assert_eq!(resolved.id, "mock/video-text");
     }
 
@@ -332,4 +345,3 @@ mod tests {
         }
     }
 }
-

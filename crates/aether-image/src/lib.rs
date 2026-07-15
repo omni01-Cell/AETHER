@@ -1,13 +1,12 @@
 pub mod cpu;
 pub mod gpu;
 
+use aether_core::{AetherError, Asset, AssetKind, Ref};
+use image::GenericImageView;
+use resvg::usvg;
 use std::fs;
 use std::path::Path;
 use tiny_skia::{Color, Pixmap, Transform};
-use resvg::usvg;
-use blake3;
-use image::GenericImageView;
-use aether_core::{AetherError, Ref, Asset, AssetKind};
 
 /// Helper to parse standard hex colors (e.g. "#FF0000" or "red") into tiny-skia Color.
 pub fn parse_color(color_str: &str) -> Color {
@@ -79,8 +78,9 @@ pub fn import_image<P: AsRef<Path>>(
 
     // 3. Move/Copy to the cache directory
     if !cache_dir.exists() {
-        fs::create_dir_all(cache_dir)
-            .map_err(|e| AetherError::IoError(cache_dir.to_string_lossy().to_string(), e.to_string()))?;
+        fs::create_dir_all(cache_dir).map_err(|e| {
+            AetherError::IoError(cache_dir.to_string_lossy().to_string(), e.to_string())
+        })?;
     }
     let ext = src.extension().and_then(|e| e.to_str()).unwrap_or("png");
     let cache_file_name = format!("{}.{}", hash, ext);
@@ -108,25 +108,32 @@ pub fn create_canvas(
     r: Ref,
     cache_dir: &Path,
 ) -> Result<Asset, AetherError> {
-    let mut pixmap = Pixmap::new(width, height)
-        .ok_or_else(|| AetherError::MediaError(format!("Failed to create canvas pixmap {}x{}", width, height)))?;
+    let mut pixmap = Pixmap::new(width, height).ok_or_else(|| {
+        AetherError::MediaError(format!(
+            "Failed to create canvas pixmap {}x{}",
+            width, height
+        ))
+    })?;
 
     let color = parse_color(color_str);
     pixmap.fill(color);
 
     // Save Pixmap to cache under a unique hash
-    let png_bytes = pixmap.encode_png()
+    let png_bytes = pixmap
+        .encode_png()
         .map_err(|e| AetherError::MediaError(format!("Failed to encode canvas PNG: {}", e)))?;
 
     let hash = blake3::hash(&png_bytes).to_hex().to_string();
 
     if !cache_dir.exists() {
-        fs::create_dir_all(cache_dir)
-            .map_err(|e| AetherError::IoError(cache_dir.to_string_lossy().to_string(), e.to_string()))?;
+        fs::create_dir_all(cache_dir).map_err(|e| {
+            AetherError::IoError(cache_dir.to_string_lossy().to_string(), e.to_string())
+        })?;
     }
     let file_path = cache_dir.join(format!("{}.png", hash));
-    fs::write(&file_path, png_bytes)
-        .map_err(|e| AetherError::IoError(file_path.to_string_lossy().to_string(), e.to_string()))?;
+    fs::write(&file_path, png_bytes).map_err(|e| {
+        AetherError::IoError(file_path.to_string_lossy().to_string(), e.to_string())
+    })?;
 
     Ok(Asset {
         r,
@@ -160,8 +167,9 @@ pub fn draw_text(
     let height = original_pixmap.height();
 
     // Create a new empty pixmap for rendering the text
-    let mut text_pixmap = Pixmap::new(width, height)
-        .ok_or_else(|| AetherError::MediaError("Failed to create temporary text pixmap".to_string()))?;
+    let mut text_pixmap = Pixmap::new(width, height).ok_or_else(|| {
+        AetherError::MediaError("Failed to create temporary text pixmap".to_string())
+    })?;
 
     // Build usvg Font Database
     let mut fontdb = usvg::fontdb::Database::new();
@@ -185,7 +193,6 @@ pub fn draw_text(
     // Render text on top of the text_pixmap
     resvg::render(&tree, Transform::default(), &mut text_pixmap.as_mut());
 
-
     // Composite original pixmap and text pixmap
     let mut final_pixmap = original_pixmap;
     final_pixmap.draw_pixmap(
@@ -198,18 +205,21 @@ pub fn draw_text(
     );
 
     // Save final Pixmap to cache under a unique hash
-    let png_bytes = final_pixmap.encode_png()
+    let png_bytes = final_pixmap
+        .encode_png()
         .map_err(|e| AetherError::MediaError(format!("Failed to encode combined PNG: {}", e)))?;
 
     let hash = blake3::hash(&png_bytes).to_hex().to_string();
 
     if !cache_dir.exists() {
-        fs::create_dir_all(cache_dir)
-            .map_err(|e| AetherError::IoError(cache_dir.to_string_lossy().to_string(), e.to_string()))?;
+        fs::create_dir_all(cache_dir).map_err(|e| {
+            AetherError::IoError(cache_dir.to_string_lossy().to_string(), e.to_string())
+        })?;
     }
     let file_path = cache_dir.join(format!("{}.png", hash));
-    fs::write(&file_path, png_bytes)
-        .map_err(|e| AetherError::IoError(file_path.to_string_lossy().to_string(), e.to_string()))?;
+    fs::write(&file_path, png_bytes).map_err(|e| {
+        AetherError::IoError(file_path.to_string_lossy().to_string(), e.to_string())
+    })?;
 
     Ok(Asset {
         r,
@@ -229,8 +239,9 @@ pub fn draw_text(
 pub fn export_image<P: AsRef<Path>>(asset: &Asset, dest_path: P) -> Result<(), AetherError> {
     let dest = dest_path.as_ref();
     if let Some(parent) = dest.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| AetherError::IoError(parent.to_string_lossy().to_string(), e.to_string()))?;
+        fs::create_dir_all(parent).map_err(|e| {
+            AetherError::IoError(parent.to_string_lossy().to_string(), e.to_string())
+        })?;
     }
     fs::copy(&asset.path, dest)
         .map_err(|e| AetherError::IoError(dest.to_string_lossy().to_string(), e.to_string()))?;
@@ -240,14 +251,17 @@ pub fn export_image<P: AsRef<Path>>(asset: &Asset, dest_path: P) -> Result<(), A
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use aether_core::RefKind;
+    use std::path::PathBuf;
 
     fn temp_test_dir() -> PathBuf {
-        let unique_dir = format!("test_image_{}", std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos());
+        let unique_dir = format!(
+            "test_image_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
         std::env::temp_dir().join(unique_dir)
     }
 
@@ -270,7 +284,10 @@ mod tests {
     fn test_canvas_creation() {
         let dir = temp_test_dir();
         let cache_dir = dir.join("cache");
-        let r = Ref { kind: RefKind::Image, id: 1 };
+        let r = Ref {
+            kind: RefKind::Image,
+            id: 1,
+        };
         let asset = create_canvas(400, 300, "blue", r, &cache_dir).unwrap();
 
         assert_eq!(asset.r, r);
@@ -287,7 +304,6 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
-
     #[test]
     fn test_image_import_and_text_overlay() {
         let dir = temp_test_dir();
@@ -300,9 +316,11 @@ mod tests {
         pixmap.fill(Color::from_rgba8(255, 255, 255, 255));
         pixmap.save_png(&src_png).unwrap();
 
-
         // 2. Import the source image
-        let r1 = Ref { kind: RefKind::Image, id: 1 };
+        let r1 = Ref {
+            kind: RefKind::Image,
+            id: 1,
+        };
         let asset1 = import_image(&src_png, r1, &cache_dir).unwrap();
 
         assert_eq!(asset1.r, r1);
@@ -310,7 +328,10 @@ mod tests {
         assert_eq!(asset1.metadata["width"].as_u64().unwrap(), 200);
 
         // 3. Draw text overlay on imported image
-        let r2 = Ref { kind: RefKind::Image, id: 2 };
+        let r2 = Ref {
+            kind: RefKind::Image,
+            id: 2,
+        };
         let asset2 = draw_text(
             &asset1,
             "Hello",
@@ -321,44 +342,78 @@ mod tests {
             "red",
             r2,
             &cache_dir,
-        ).unwrap();
+        )
+        .unwrap();
 
         assert_eq!(asset2.r, r2);
         assert!(asset2.path.exists());
-        assert_eq!(asset2.metadata["parent_hash"].as_str().unwrap(), asset1.hash);
+        assert_eq!(
+            asset2.metadata["parent_hash"].as_str().unwrap(),
+            asset1.hash
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn test_render_backends_cpu_and_gpu() {
-        use aether_core::{CompositionGraph, RefRegistry, Node, NodeKind, Connection, FilterKind, RenderBackend};
-        
+        use aether_core::{
+            CompositionGraph, Connection, FilterKind, Node, NodeKind, RefRegistry, RenderBackend,
+        };
+
         let dir = temp_test_dir();
         let cache_dir = dir.join("cache");
-        
-        let r1 = Ref { kind: RefKind::Image, id: 1 };
+
+        let r1 = Ref {
+            kind: RefKind::Image,
+            id: 1,
+        };
         let asset1 = create_canvas(100, 100, "red", r1, &cache_dir).unwrap();
-        
+
         let registry = RefRegistry::new();
         registry.register(r1, asset1).unwrap();
-        
+
         let mut graph = CompositionGraph::new();
-        graph.add_node(Node { id: 1, kind: NodeKind::Source(r1) });
-        graph.add_node(Node { id: 2, kind: NodeKind::Filter { kind: FilterKind::Brightness { delta: 0.1 } } });
-        graph.add_node(Node { id: 3, kind: NodeKind::Output });
-        
-        graph.connect(Connection { from_node: 1, from_port: 0, to_node: 2, to_port: 0 }).unwrap();
-        graph.connect(Connection { from_node: 2, from_port: 0, to_node: 3, to_port: 0 }).unwrap();
+        graph.add_node(Node {
+            id: 1,
+            kind: NodeKind::Source(r1),
+        });
+        graph.add_node(Node {
+            id: 2,
+            kind: NodeKind::Filter {
+                kind: FilterKind::Brightness { delta: 0.1 },
+            },
+        });
+        graph.add_node(Node {
+            id: 3,
+            kind: NodeKind::Output,
+        });
+
+        graph
+            .connect(Connection {
+                from_node: 1,
+                from_port: 0,
+                to_node: 2,
+                to_port: 0,
+            })
+            .unwrap();
+        graph
+            .connect(Connection {
+                from_node: 2,
+                from_port: 0,
+                to_node: 3,
+                to_port: 0,
+            })
+            .unwrap();
         graph.output_node = Some(3);
-        
+
         let cpu = cpu::CpuBackend;
         let cpu_data = cpu.render(&graph, 50, 50, &registry).unwrap();
         assert_eq!(cpu_data.len(), 50 * 50 * 4);
-        
+
         let gpu = gpu::GpuBackend;
         let gpu_res = gpu.render(&graph, 50, 50, &registry);
-        
+
         #[cfg(feature = "gpu")]
         {
             let gpu_data = gpu_res.unwrap();
@@ -368,8 +423,7 @@ mod tests {
         {
             assert!(gpu_res.is_err());
         }
-        
+
         let _ = fs::remove_dir_all(&dir);
     }
 }
-

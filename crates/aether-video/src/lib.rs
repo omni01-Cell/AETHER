@@ -1,10 +1,9 @@
 pub mod transitions;
 
+use aether_core::{AetherError, Asset, AssetKind, Ref};
+use ffmpeg_next as ffmpeg;
 use std::fs;
 use std::path::Path;
-use ffmpeg_next as ffmpeg;
-use blake3;
-use aether_core::{AetherError, Ref, Asset, AssetKind};
 
 /// Extracts detailed technical metadata from a video file using ffmpeg-next.
 pub fn get_video_metadata<P: AsRef<Path>>(path: P) -> Result<serde_json::Value, AetherError> {
@@ -14,11 +13,16 @@ pub fn get_video_metadata<P: AsRef<Path>>(path: P) -> Result<serde_json::Value, 
 
     let has_audio = ictx.streams().best(ffmpeg::media::Type::Audio).is_some();
 
-    let (width, height, duration, fps) = if let Some(stream) = ictx.streams().best(ffmpeg::media::Type::Video) {
-        let codec = ffmpeg::codec::context::Context::from_parameters(stream.parameters())
-            .map_err(|e| AetherError::MediaError(format!("Failed to extract video codec parameters: {}", e)))?;
-        let video = codec.decoder().video()
-            .map_err(|e| AetherError::MediaError(format!("Failed to retrieve video decoder: {}", e)))?;
+    let (width, height, duration, fps) = if let Some(stream) =
+        ictx.streams().best(ffmpeg::media::Type::Video)
+    {
+        let codec =
+            ffmpeg::codec::context::Context::from_parameters(stream.parameters()).map_err(|e| {
+                AetherError::MediaError(format!("Failed to extract video codec parameters: {}", e))
+            })?;
+        let video = codec.decoder().video().map_err(|e| {
+            AetherError::MediaError(format!("Failed to retrieve video decoder: {}", e))
+        })?;
 
         let w = video.width();
         let h = video.height();
@@ -40,7 +44,9 @@ pub fn get_video_metadata<P: AsRef<Path>>(path: P) -> Result<serde_json::Value, 
 
         (w, h, d, f)
     } else {
-        return Err(AetherError::MediaError("No video stream found in the source file".to_string()));
+        return Err(AetherError::MediaError(
+            "No video stream found in the source file".to_string(),
+        ));
     };
 
     Ok(serde_json::json!({
@@ -51,7 +57,6 @@ pub fn get_video_metadata<P: AsRef<Path>>(path: P) -> Result<serde_json::Value, 
         "has_audio": has_audio,
     }))
 }
-
 
 /// Imports a video file using Content-Addressable Storage (CAS) with Blake3 hashing,
 /// moving it to the cache directory, and retrieving metadata.
@@ -81,8 +86,9 @@ pub fn import_video<P: AsRef<Path>>(
 
     // 3. Move/Copy to the cache directory
     if !cache_dir.exists() {
-        fs::create_dir_all(cache_dir)
-            .map_err(|e| AetherError::IoError(cache_dir.to_string_lossy().to_string(), e.to_string()))?;
+        fs::create_dir_all(cache_dir).map_err(|e| {
+            AetherError::IoError(cache_dir.to_string_lossy().to_string(), e.to_string())
+        })?;
     }
     let ext = src.extension().and_then(|e| e.to_str()).unwrap_or("mp4");
     let cache_file_name = format!("{}.{}", hash, ext);
@@ -110,7 +116,11 @@ pub fn trim_video(
     r: Ref,
     cache_dir: &Path,
 ) -> Result<Asset, AetherError> {
-    let ext = asset.path.extension().and_then(|e| e.to_str()).unwrap_or("mp4");
+    let ext = asset
+        .path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("mp4");
 
     // Calculate unique output hash based on command inputs
     let mut hasher = blake3::Hasher::new();
@@ -123,11 +133,16 @@ pub fn trim_video(
     if !output_path.exists() {
         let status = std::process::Command::new("ffmpeg")
             .args([
-                "-ss", start,
-                "-to", end,
-                "-i", asset.path.to_str().unwrap(),
-                "-c:v", "libx264",
-                "-c:a", "aac",
+                "-ss",
+                start,
+                "-to",
+                end,
+                "-i",
+                asset.path.to_str().unwrap(),
+                "-c:v",
+                "libx264",
+                "-c:a",
+                "aac",
                 "-y",
                 output_path.to_str().unwrap(),
             ])
@@ -154,13 +169,11 @@ pub fn trim_video(
 }
 
 /// Concatenates multiple video assets using a stable FFmpeg filter_complex concat structure.
-pub fn concat_video(
-    assets: &[Asset],
-    r: Ref,
-    cache_dir: &Path,
-) -> Result<Asset, AetherError> {
+pub fn concat_video(assets: &[Asset], r: Ref, cache_dir: &Path) -> Result<Asset, AetherError> {
     if assets.is_empty() {
-        return Err(AetherError::MediaError("Cannot concatenate an empty list of video assets".to_string()));
+        return Err(AetherError::MediaError(
+            "Cannot concatenate an empty list of video assets".to_string(),
+        ));
     }
     if assets.len() == 1 {
         return Ok(assets[0].clone());
@@ -187,11 +200,16 @@ pub fn concat_video(
 
         let status = cmd
             .args([
-                "-filter_complex", &filter_complex,
-                "-map", "[v]",
-                "-map", "[a]",
-                "-c:v", "libx264",
-                "-c:a", "aac",
+                "-filter_complex",
+                &filter_complex,
+                "-map",
+                "[v]",
+                "-map",
+                "[a]",
+                "-c:v",
+                "libx264",
+                "-c:a",
+                "aac",
                 "-y",
                 output_path.to_str().unwrap(),
             ])
@@ -242,18 +260,24 @@ pub fn render_video(
     // Make sure parent directory of output exists
     if let Some(parent) = output_path.parent() {
         if !parent.exists() {
-            fs::create_dir_all(parent)
-                .map_err(|e| AetherError::IoError(parent.to_string_lossy().to_string(), e.to_string()))?;
+            fs::create_dir_all(parent).map_err(|e| {
+                AetherError::IoError(parent.to_string_lossy().to_string(), e.to_string())
+            })?;
         }
     }
 
     let status = std::process::Command::new("ffmpeg")
         .args([
-            "-i", timeline_asset.path.to_str().unwrap(),
-            "-c:v", v_codec,
-            "-crf", crf,
-            "-c:a", "aac",
-            "-f", format,
+            "-i",
+            timeline_asset.path.to_str().unwrap(),
+            "-c:v",
+            v_codec,
+            "-crf",
+            crf,
+            "-c:a",
+            "aac",
+            "-f",
+            format,
             "-y",
             output_path.to_str().unwrap(),
         ])
@@ -280,7 +304,11 @@ pub fn composite_video(
     r: Ref,
     cache_dir: &Path,
 ) -> Result<Asset, AetherError> {
-    let ext = base.path.extension().and_then(|e| e.to_str()).unwrap_or("mp4");
+    let ext = base
+        .path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("mp4");
 
     // Calculate unique output hash based on inputs
     let mut hasher = blake3::Hasher::new();
@@ -305,18 +333,27 @@ pub fn composite_video(
 
         let status = std::process::Command::new("ffmpeg")
             .args([
-                "-i", base.path.to_str().unwrap(),
-                "-i", overlay.path.to_str().unwrap(),
-                "-filter_complex", &filter_str,
-                "-map", "[v]",
-                "-map", "0:a?",
-                "-c:v", "libx264",
-                "-c:a", "aac",
+                "-i",
+                base.path.to_str().unwrap(),
+                "-i",
+                overlay.path.to_str().unwrap(),
+                "-filter_complex",
+                &filter_str,
+                "-map",
+                "[v]",
+                "-map",
+                "0:a?",
+                "-c:v",
+                "libx264",
+                "-c:a",
+                "aac",
                 "-y",
                 output_path.to_str().unwrap(),
             ])
             .status()
-            .map_err(|e| AetherError::MediaError(format!("Failed to run FFmpeg composite: {}", e)))?;
+            .map_err(|e| {
+                AetherError::MediaError(format!("Failed to run FFmpeg composite: {}", e))
+            })?;
 
         if !status.success() {
             return Err(AetherError::MediaError(format!(
@@ -340,14 +377,17 @@ pub fn composite_video(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use aether_core::RefKind;
+    use std::path::PathBuf;
 
     fn temp_test_dir() -> PathBuf {
-        let unique_dir = format!("test_video_{}", std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos());
+        let unique_dir = format!(
+            "test_video_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
         std::env::temp_dir().join(unique_dir)
     }
 
@@ -357,13 +397,20 @@ mod tests {
         }
         let status = std::process::Command::new("ffmpeg")
             .args([
-                "-f", "lavfi",
-                "-i", "testsrc=duration=2:size=320x240:rate=30",
-                "-f", "lavfi",
-                "-i", "sine=duration=2:frequency=1000",
-                "-c:v", "libx264",
-                "-c:a", "aac",
-                "-pix_fmt", "yuv420p",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=duration=2:size=320x240:rate=30",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=duration=2:frequency=1000",
+                "-c:v",
+                "libx264",
+                "-c:a",
+                "aac",
+                "-pix_fmt",
+                "yuv420p",
                 "-y",
                 output_path.to_str().unwrap(),
             ])
@@ -394,7 +441,10 @@ mod tests {
         generate_synthetic_mp4(&video_path);
 
         let cache_dir = dir.join("cache");
-        let r1 = Ref { kind: RefKind::Video, id: 1 };
+        let r1 = Ref {
+            kind: RefKind::Video,
+            id: 1,
+        };
         let asset1 = import_video(&video_path, r1, &cache_dir).unwrap();
 
         assert_eq!(asset1.r, r1);
@@ -403,7 +453,10 @@ mod tests {
         assert_eq!(asset1.metadata["width"].as_u64().unwrap(), 320);
 
         // Trim from 0.5s to 1.5s
-        let r2 = Ref { kind: RefKind::Video, id: 2 };
+        let r2 = Ref {
+            kind: RefKind::Video,
+            id: 2,
+        };
         let asset2 = trim_video(&asset1, "0.5", "1.5", r2, &cache_dir).unwrap();
 
         assert_eq!(asset2.r, r2);
@@ -420,11 +473,17 @@ mod tests {
         generate_synthetic_mp4(&video_path);
 
         let cache_dir = dir.join("cache");
-        let r1 = Ref { kind: RefKind::Video, id: 1 };
+        let r1 = Ref {
+            kind: RefKind::Video,
+            id: 1,
+        };
         let asset1 = import_video(&video_path, r1, &cache_dir).unwrap();
 
         // Concat copy with itself
-        let r2 = Ref { kind: RefKind::Video, id: 2 };
+        let r2 = Ref {
+            kind: RefKind::Video,
+            id: 2,
+        };
         let asset2 = concat_video(&[asset1.clone(), asset1], r2, &cache_dir).unwrap();
 
         assert_eq!(asset2.r, r2);
@@ -432,7 +491,10 @@ mod tests {
         assert!((asset2.metadata["duration"].as_f64().unwrap() - 4.0).abs() < 0.35);
 
         // Test compositing
-        let r3 = Ref { kind: RefKind::Video, id: 3 };
+        let r3 = Ref {
+            kind: RefKind::Video,
+            id: 3,
+        };
         let comp_asset = composite_video(&asset2, &asset2, "1.0", 10, 20, r3, &cache_dir).unwrap();
         assert_eq!(comp_asset.r, r3);
         assert!(comp_asset.path.exists());
@@ -452,7 +514,10 @@ mod tests {
         generate_synthetic_mp4(&video_path);
 
         let cache_dir = dir.join("cache");
-        let r1 = Ref { kind: RefKind::Video, id: 1 };
+        let r1 = Ref {
+            kind: RefKind::Video,
+            id: 1,
+        };
         let asset1 = import_video(&video_path, r1, &cache_dir).unwrap();
 
         let out_crossfade = dir.join("crossfade.mp4");
@@ -463,15 +528,21 @@ mod tests {
         transitions::render_wipe(&asset1, &asset1, "right", 0.5, &out_wipe).unwrap();
         assert!(out_wipe.exists());
 
-        let r2 = Ref { kind: RefKind::Video, id: 2 };
+        let r2 = Ref {
+            kind: RefKind::Video,
+            id: 2,
+        };
         let speed_asset = transitions::change_speed(&asset1, 2.0, r2, &cache_dir).unwrap();
         assert_eq!(speed_asset.r, r2);
         assert!(speed_asset.path.exists());
-        
+
         let speed_dur = speed_asset.metadata["duration"].as_f64().unwrap();
-        assert!((speed_dur - 1.0).abs() < 0.25, "Expected duration ~1.0, got: {}", speed_dur);
+        assert!(
+            (speed_dur - 1.0).abs() < 0.25,
+            "Expected duration ~1.0, got: {}",
+            speed_dur
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }
 }
-
