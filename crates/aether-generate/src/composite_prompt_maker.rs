@@ -1,12 +1,18 @@
 use aether_core::{AetherError, GenerationKind, ProfessionalPrompt};
 
-use crate::prompter::LlmPrompterAgent;
 use crate::prompt::{PromptMaker, PromptMakerContext, RuleBasedPromptMaker};
+use crate::prompter::LlmPrompterAgent;
 
 /// Agent LLM Maître d'Hôtel quand un modèle guidé est ciblé, sinon RuleBasedPromptMaker.
 pub struct CompositePromptMaker {
     pub llm_prompter: Option<LlmPrompterAgent>,
     pub rule_based: RuleBasedPromptMaker,
+}
+
+impl Default for CompositePromptMaker {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CompositePromptMaker {

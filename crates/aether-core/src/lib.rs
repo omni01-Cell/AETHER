@@ -1,10 +1,10 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::RwLock;
 use std::sync::atomic::{AtomicU32, Ordering};
-use serde::{Deserialize, Serialize};
+use std::sync::RwLock;
 use thiserror::Error;
 
 pub mod keyframes;
@@ -433,9 +433,17 @@ pub enum FilterKind {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum NodeKind {
     Source(Ref),
-    Blend { mode: BlendMode, opacity: f32 },
-    Transition { kind: TransitionKind, duration_ms: u32 },
-    Filter { kind: FilterKind },
+    Blend {
+        mode: BlendMode,
+        opacity: f32,
+    },
+    Transition {
+        kind: TransitionKind,
+        duration_ms: u32,
+    },
+    Filter {
+        kind: FilterKind,
+    },
     Output,
 }
 
@@ -500,13 +508,21 @@ impl CompositionGraph {
     pub fn connect(&mut self, conn: Connection) -> Result<(), AetherError> {
         // Invariant: If successful, the connection is added and the graph remains a Directed Acyclic Graph (DAG); on failure, the graph's connections list remains unchanged.
         if !self.nodes.contains_key(&conn.from_node) {
-            return Err(AetherError::OperationFailed(format!("Source node {} not found", conn.from_node)));
+            return Err(AetherError::OperationFailed(format!(
+                "Source node {} not found",
+                conn.from_node
+            )));
         }
         if !self.nodes.contains_key(&conn.to_node) {
-            return Err(AetherError::OperationFailed(format!("Target node {} not found", conn.to_node)));
+            return Err(AetherError::OperationFailed(format!(
+                "Target node {} not found",
+                conn.to_node
+            )));
         }
         if self.is_reachable(conn.to_node, conn.from_node) {
-            return Err(AetherError::OperationFailed("Connecting these nodes would introduce a cycle".to_string()));
+            return Err(AetherError::OperationFailed(
+                "Connecting these nodes would introduce a cycle".to_string(),
+            ));
         }
         self.connections.push(conn);
         Ok(())
@@ -516,7 +532,8 @@ impl CompositionGraph {
     pub fn remove_node(&mut self, id: NodeId) {
         // Invariant: The specified node and all connections referencing it are completely removed from the graph.
         self.nodes.remove(&id);
-        self.connections.retain(|c| c.from_node != id && c.to_node != id);
+        self.connections
+            .retain(|c| c.from_node != id && c.to_node != id);
         if self.output_node == Some(id) {
             self.output_node = None;
         }
@@ -562,7 +579,9 @@ impl CompositionGraph {
         }
 
         if sorted.len() != self.nodes.len() {
-            return Err(AetherError::OperationFailed("Cycle detected during topological sorting".to_string()));
+            return Err(AetherError::OperationFailed(
+                "Cycle detected during topological sorting".to_string(),
+            ));
         }
 
         Ok(sorted)
@@ -916,7 +935,7 @@ pub enum Command {
         target: Option<String>,
     },
     ProjectList,
-        ProjectDelete {
+    ProjectDelete {
         target: String,
         force: bool,
         archive: bool,
@@ -1026,7 +1045,10 @@ impl FromStr for VaultKind {
             "studio" => Ok(VaultKind::Studio),
             "client" => Ok(VaultKind::Client),
             "general" => Ok(VaultKind::General),
-            other => Err(AetherError::VaultError(format!("Unknown Vault kind: '{}'", other))),
+            other => Err(AetherError::VaultError(format!(
+                "Unknown Vault kind: '{}'",
+                other
+            ))),
         }
     }
 }
@@ -1109,7 +1131,10 @@ impl FromStr for VaultAssetKind {
             "prompt-snippet" => Ok(VaultAssetKind::PromptSnippet),
             "negative-prompt" => Ok(VaultAssetKind::NegativePrompt),
             "example-output" => Ok(VaultAssetKind::ExampleOutput),
-            other => Err(AetherError::VaultError(format!("Unknown Vault asset kind: '{}'", other))),
+            other => Err(AetherError::VaultError(format!(
+                "Unknown Vault asset kind: '{}'",
+                other
+            ))),
         }
     }
 }
@@ -1165,7 +1190,10 @@ impl FromStr for VaultUsage {
             "storyboard" => Ok(VaultUsage::Storyboard),
             "prompt-maker" => Ok(VaultUsage::PromptMaker),
             "export-branding" => Ok(VaultUsage::ExportBranding),
-            other => Err(AetherError::VaultError(format!("Unknown Vault usage: '{}'", other))),
+            other => Err(AetherError::VaultError(format!(
+                "Unknown Vault usage: '{}'",
+                other
+            ))),
         }
     }
 }
@@ -1323,10 +1351,22 @@ mod tests {
 
     #[test]
     fn test_ref_parsing_invalid() {
-        assert!(matches!("@v".parse::<Ref>(), Err(AetherError::InvalidRef(_, _))));
-        assert!(matches!("v1".parse::<Ref>(), Err(AetherError::InvalidRef(_, _))));
-        assert!(matches!("@v1a".parse::<Ref>(), Err(AetherError::InvalidRef(_, _))));
-        assert!(matches!("@unknown123".parse::<Ref>(), Err(AetherError::InvalidRef(_, _))));
+        assert!(matches!(
+            "@v".parse::<Ref>(),
+            Err(AetherError::InvalidRef(_, _))
+        ));
+        assert!(matches!(
+            "v1".parse::<Ref>(),
+            Err(AetherError::InvalidRef(_, _))
+        ));
+        assert!(matches!(
+            "@v1a".parse::<Ref>(),
+            Err(AetherError::InvalidRef(_, _))
+        ));
+        assert!(matches!(
+            "@unknown123".parse::<Ref>(),
+            Err(AetherError::InvalidRef(_, _))
+        ));
     }
 
     #[test]
@@ -1349,9 +1389,27 @@ mod tests {
         let r2 = registry.allocate(RefKind::Video);
         let r3 = registry.allocate(RefKind::Audio);
 
-        assert_eq!(r1, Ref { kind: RefKind::Video, id: 1 });
-        assert_eq!(r2, Ref { kind: RefKind::Video, id: 2 });
-        assert_eq!(r3, Ref { kind: RefKind::Audio, id: 1 });
+        assert_eq!(
+            r1,
+            Ref {
+                kind: RefKind::Video,
+                id: 1
+            }
+        );
+        assert_eq!(
+            r2,
+            Ref {
+                kind: RefKind::Video,
+                id: 2
+            }
+        );
+        assert_eq!(
+            r3,
+            Ref {
+                kind: RefKind::Audio,
+                id: 1
+            }
+        );
     }
 
     #[test]
@@ -1373,7 +1431,10 @@ mod tests {
         assert_eq!(registry.register(r, asset.clone()), Ok(()));
 
         // Registering same reference twice fails
-        assert_eq!(registry.register(r, asset.clone()), Err(AetherError::RefAlreadyExists(r)));
+        assert_eq!(
+            registry.register(r, asset.clone()),
+            Err(AetherError::RefAlreadyExists(r))
+        );
 
         // Resolution succeeds after registration
         assert_eq!(registry.resolve(&r), Ok(asset));
@@ -1389,22 +1450,68 @@ mod tests {
         let r1 = "@v1".parse::<Ref>().unwrap();
         let r2 = "@v2".parse::<Ref>().unwrap();
 
-        let n1 = Node { id: 1, kind: NodeKind::Source(r1) };
-        let n2 = Node { id: 2, kind: NodeKind::Source(r2) };
-        let n3 = Node { id: 3, kind: NodeKind::Blend { mode: BlendMode::Normal, opacity: 1.0 } };
-        let n4 = Node { id: 4, kind: NodeKind::Output };
+        let n1 = Node {
+            id: 1,
+            kind: NodeKind::Source(r1),
+        };
+        let n2 = Node {
+            id: 2,
+            kind: NodeKind::Source(r2),
+        };
+        let n3 = Node {
+            id: 3,
+            kind: NodeKind::Blend {
+                mode: BlendMode::Normal,
+                opacity: 1.0,
+            },
+        };
+        let n4 = Node {
+            id: 4,
+            kind: NodeKind::Output,
+        };
 
         graph.add_node(n1);
         graph.add_node(n2);
         graph.add_node(n3);
         graph.add_node(n4);
 
-        assert_eq!(graph.connect(Connection { from_node: 1, from_port: 0, to_node: 3, to_port: 0 }), Ok(()));
-        assert_eq!(graph.connect(Connection { from_node: 2, from_port: 0, to_node: 3, to_port: 1 }), Ok(()));
-        assert_eq!(graph.connect(Connection { from_node: 3, from_port: 0, to_node: 4, to_port: 0 }), Ok(()));
+        assert_eq!(
+            graph.connect(Connection {
+                from_node: 1,
+                from_port: 0,
+                to_node: 3,
+                to_port: 0
+            }),
+            Ok(())
+        );
+        assert_eq!(
+            graph.connect(Connection {
+                from_node: 2,
+                from_port: 0,
+                to_node: 3,
+                to_port: 1
+            }),
+            Ok(())
+        );
+        assert_eq!(
+            graph.connect(Connection {
+                from_node: 3,
+                from_port: 0,
+                to_node: 4,
+                to_port: 0
+            }),
+            Ok(())
+        );
 
         // Attempting to introduce a cycle: 4 -> 1
-        assert!(graph.connect(Connection { from_node: 4, from_port: 0, to_node: 1, to_port: 0 }).is_err());
+        assert!(graph
+            .connect(Connection {
+                from_node: 4,
+                from_port: 0,
+                to_node: 1,
+                to_port: 0
+            })
+            .is_err());
 
         let sorted = graph.topological_sort().unwrap();
         let pos1 = sorted.iter().position(|&x| x == 1).unwrap();
@@ -1490,4 +1597,3 @@ mod tests {
         assert_eq!(deserialized, job);
     }
 }
-

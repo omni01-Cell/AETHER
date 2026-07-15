@@ -1,6 +1,6 @@
+use aether_core::{AetherError, Timeline, TrackKind};
 use std::fs;
 use std::path::Path;
-use aether_core::{AetherError, Timeline, TrackKind};
 
 /// Generates a valid JSON representation adhering to OpenTimelineIO (OTIO) schemas and writes it to the specified output path.
 pub fn export_otio(timeline: &Timeline, output_path: &str) -> Result<(), AetherError> {
@@ -38,13 +38,16 @@ pub fn export_otio(timeline: &Timeline, output_path: &str) -> Result<(), AetherE
             })
         }).collect::<Vec<_>>()
     });
-    
+
     let path = Path::new(output_path);
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| AetherError::IoError(parent.to_string_lossy().to_string(), e.to_string()))?;
+        fs::create_dir_all(parent).map_err(|e| {
+            AetherError::IoError(parent.to_string_lossy().to_string(), e.to_string())
+        })?;
     }
     let formatted_json = serde_json::to_string_pretty(&otio_json)
         .map_err(|e| AetherError::OperationFailed(format!("Failed to format OTIO JSON: {}", e)))?;
-    fs::write(path, formatted_json).map_err(|e| AetherError::IoError(output_path.to_string(), e.to_string()))?;
+    fs::write(path, formatted_json)
+        .map_err(|e| AetherError::IoError(output_path.to_string(), e.to_string()))?;
     Ok(())
 }

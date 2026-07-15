@@ -1,17 +1,17 @@
 pub mod observation;
 
+use aether_core::{
+    AetherError, AssetKind, BlendMode, Clip, Command, CommandResult, CompositionGraph,
+    Connection as GraphConnection, GenerationKind, GenerationStatus, Node, NodeKind,
+    ProjectSettings, Ref, RefKind, RefRegistry, SmartObservation, Snapshot, TelemetryData,
+    Timeline, Track, TrackKind, TransitionKind,
+};
+use aether_generate::DefaultGenerationRuntime;
+use aether_persistence::DbManager;
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{RwLock, Mutex};
-use std::collections::HashMap;
-use aether_core::{
-    AetherError, RefKind, AssetKind, ProjectSettings, Command, CommandResult, Snapshot, RefRegistry,
-    CompositionGraph, Node, Connection as GraphConnection, NodeKind, Timeline, Track, Clip,
-    TransitionKind, TrackKind, BlendMode, SmartObservation, TelemetryData,
-    GenerationKind, Ref, GenerationStatus
-};
-use aether_persistence::DbManager;
-use aether_generate::DefaultGenerationRuntime;
+use std::sync::{Mutex, RwLock};
 
 pub struct SessionManager {
     registry: RefRegistry,
@@ -33,22 +33,24 @@ impl SessionManager {
         let p_dir = project_dir.as_ref().to_path_buf();
         let aether_dir = p_dir.join(".aether");
         if !aether_dir.exists() {
-            fs::create_dir_all(&aether_dir)
-                .map_err(|e| AetherError::IoError(aether_dir.to_string_lossy().to_string(), e.to_string()))?;
+            fs::create_dir_all(&aether_dir).map_err(|e| {
+                AetherError::IoError(aether_dir.to_string_lossy().to_string(), e.to_string())
+            })?;
         }
 
         let db = DbManager::new(&aether_dir)?;
         let cache_dir = aether_dir.join("cache");
         if !cache_dir.exists() {
-            fs::create_dir_all(&cache_dir)
-                .map_err(|e| AetherError::IoError(cache_dir.to_string_lossy().to_string(), e.to_string()))?;
+            fs::create_dir_all(&cache_dir).map_err(|e| {
+                AetherError::IoError(cache_dir.to_string_lossy().to_string(), e.to_string())
+            })?;
         }
 
         // Load settings, branch and current commit from DB
         let (settings, current_branch, current_commit) = db.load_settings()?;
         let graph = db.load_graph()?;
         let timeline = db.load_timeline()?;
-        
+
         let runtime = DefaultGenerationRuntime::new(cache_dir.join("generated"));
 
         let manager = SessionManager {
@@ -123,12 +125,12 @@ impl SessionManager {
         // Invariant: Restores the project state from the specified checkpoint, syncs in-memory models and active SQLite tables.
         if !commit_hash.is_empty() {
             let (timeline, graph, assets, settings) = db.load_checkpoint(commit_hash)?;
-            
+
             // Overwrite memory
             *self.timeline.write().unwrap() = timeline.clone();
             *self.graph.write().unwrap() = graph.clone();
             *self.settings.write().unwrap() = settings.clone();
-            
+
             // Overwrite registry assets
             let mut registry_map = HashMap::new();
             for asset in assets {
@@ -158,7 +160,11 @@ impl SessionManager {
         }
 
         *self.current_commit.write().unwrap() = commit_hash.to_string();
-        db.save_settings(&self.settings.read().unwrap(), &self.current_branch.read().unwrap(), commit_hash)?;
+        db.save_settings(
+            &self.settings.read().unwrap(),
+            &self.current_branch.read().unwrap(),
+            commit_hash,
+        )?;
         Ok(())
     }
 
@@ -217,7 +223,11 @@ impl SessionManager {
             options: options_with_vault,
         };
 
-        db.add_generation_event(&job_ref, &GenerationStatus::Running, "Job processing started")?;
+        db.add_generation_event(
+            &job_ref,
+            &GenerationStatus::Running,
+            "Job processing started",
+        )?;
         let job = self.runtime.run_to_completion(req)?;
         db.save_generation_job(&job)?;
         db.add_generation_event(&job_ref, &job.status, "Job execution completed")?;
@@ -237,20 +247,25 @@ impl SessionManager {
                         r: asset_ref,
                         kind: AssetKind::Image,
                         path: art.path.clone(),
-                        hash: blake3::hash(&std::fs::read(&art.path).unwrap_or_default()).to_hex().to_string(),
+                        hash: blake3::hash(&std::fs::read(&art.path).unwrap_or_default())
+                            .to_hex()
+                            .to_string(),
                         metadata: art.metadata.clone(),
                     };
                     self.registry.register(asset_ref, asset.clone())?;
                     db.save_asset(&asset)?;
                     registered.push(asset_ref.to_string());
                 }
-                aether_core::GeneratedArtifactKind::Audio | aether_core::GeneratedArtifactKind::Music => {
+                aether_core::GeneratedArtifactKind::Audio
+                | aether_core::GeneratedArtifactKind::Music => {
                     let asset_ref = self.registry.reserve_next(RefKind::Audio);
                     let asset = aether_core::Asset {
                         r: asset_ref,
                         kind: AssetKind::Audio,
                         path: art.path.clone(),
-                        hash: blake3::hash(&std::fs::read(&art.path).unwrap_or_default()).to_hex().to_string(),
+                        hash: blake3::hash(&std::fs::read(&art.path).unwrap_or_default())
+                            .to_hex()
+                            .to_string(),
                         metadata: art.metadata.clone(),
                     };
                     self.registry.register(asset_ref, asset.clone())?;
@@ -263,7 +278,9 @@ impl SessionManager {
                         r: asset_ref,
                         kind: AssetKind::Video,
                         path: art.path.clone(),
-                        hash: blake3::hash(&std::fs::read(&art.path).unwrap_or_default()).to_hex().to_string(),
+                        hash: blake3::hash(&std::fs::read(&art.path).unwrap_or_default())
+                            .to_hex()
+                            .to_string(),
                         metadata: art.metadata.clone(),
                     };
                     self.registry.register(asset_ref, asset.clone())?;
@@ -335,11 +352,14 @@ impl SessionManager {
                 // Check if branch already exists
                 let head = db.load_branch_head(name)?;
                 if head.is_some() {
-                    return Err(AetherError::OperationFailed(format!("Branch '{}' already exists", name)));
+                    return Err(AetherError::OperationFailed(format!(
+                        "Branch '{}' already exists",
+                        name
+                    )));
                 }
                 // Save new branch pointing to current commit
                 db.save_branch(name, &orig_commit)?;
-                
+
                 let snap = self.get_snapshot_with_db(&db)?;
                 return Ok(CommandResult {
                     success: true,
@@ -359,7 +379,10 @@ impl SessionManager {
                     // Let's verify if the checkpoint exists
                     let check_exists = db.load_checkpoint(name);
                     if check_exists.is_err() {
-                        return Err(AetherError::OperationFailed(format!("Branch or commit '{}' not found", name)));
+                        return Err(AetherError::OperationFailed(format!(
+                            "Branch or commit '{}' not found",
+                            name
+                        )));
                     }
                     *self.current_branch.write().unwrap() = "detached".to_string();
                     name.clone()
@@ -401,9 +424,21 @@ impl SessionManager {
 
         // 4. Mutation Success: Commit Phase
         // Mutation logging to SQLite history and checkpointing
-        if !matches!(command, Command::Undo | Command::Redo | Command::Snapshot | Command::Inspect { .. } | Command::KeyframeList { .. } | Command::Export { .. } | Command::ExportOtio { .. } | Command::ExportEdl { .. }) {
+        if !matches!(
+            command,
+            Command::Undo
+                | Command::Redo
+                | Command::Snapshot
+                | Command::Inspect { .. }
+                | Command::KeyframeList { .. }
+                | Command::Export { .. }
+                | Command::ExportOtio { .. }
+                | Command::ExportEdl { .. }
+        ) {
             let snapshot_after = self.get_snapshot_with_db(&db)?;
-            let commit_hash = blake3::hash(&serde_json::to_vec(&snapshot_after).unwrap()).to_hex().to_string();
+            let commit_hash = blake3::hash(&serde_json::to_vec(&snapshot_after).unwrap())
+                .to_hex()
+                .to_string();
 
             let current_branch = self.current_branch.read().unwrap().clone();
 
@@ -416,7 +451,13 @@ impl SessionManager {
             let active_graph = self.graph.read().unwrap().clone();
             let active_settings = self.settings.read().unwrap().clone();
 
-            db.save_checkpoint(&commit_hash, &active_timeline, &active_graph, &assets_list, &active_settings)?;
+            db.save_checkpoint(
+                &commit_hash,
+                &active_timeline,
+                &active_graph,
+                &assets_list,
+                &active_settings,
+            )?;
 
             // Update branch head and settings
             db.save_branch(&current_branch, &commit_hash)?;
@@ -435,11 +476,20 @@ impl SessionManager {
     }
 
     /// Performs standard mutations on the in-memory states and saves new assets to SQLite.
-    fn process_command(&self, db: &DbManager, command: &Command, affected_ref: &mut Option<aether_core::Ref>) -> Result<String, AetherError> {
+    fn process_command(
+        &self,
+        db: &DbManager,
+        command: &Command,
+        affected_ref: &mut Option<aether_core::Ref>,
+    ) -> Result<String, AetherError> {
         // Invariant: Modifies the in-memory states and saves assets/timelines to SQLite active tables.
         let msg;
         match command {
-            Command::Init { fps, resolution, colorspace } => {
+            Command::Init {
+                fps,
+                resolution,
+                colorspace,
+            } => {
                 let mut settings = self.settings.write().unwrap();
                 if let Some(f) = fps {
                     settings.fps = *f;
@@ -456,16 +506,27 @@ impl SessionManager {
                 if let Some(cs) = colorspace {
                     settings.colorspace = cs.clone();
                 }
-                db.save_settings(&settings, &self.current_branch.read().unwrap(), &self.current_commit.read().unwrap())?;
+                db.save_settings(
+                    &settings,
+                    &self.current_branch.read().unwrap(),
+                    &self.current_commit.read().unwrap(),
+                )?;
                 msg = "Project settings initialized successfully".to_string();
             }
             Command::Import { path } => {
                 let p = Path::new(path);
                 if !p.exists() {
-                    return Err(AetherError::IoError(path.clone(), "File does not exist".to_string()));
+                    return Err(AetherError::IoError(
+                        path.clone(),
+                        "File does not exist".to_string(),
+                    ));
                 }
 
-                let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+                let ext = p
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
                 let asset = match ext.as_str() {
                     "wav" | "mp3" | "ogg" | "flac" | "aac" => {
                         let r = self.registry.reserve_next(RefKind::Audio);
@@ -494,10 +555,22 @@ impl SessionManager {
                 *affected_ref = Some(new_ref);
 
                 let trimmed = match original.kind {
-                    AssetKind::Video => aether_video::trim_video(&original, start, end, new_ref, &self.cache_dir)?,
-                    AssetKind::Audio => aether_audio::trim_audio(&original, start, end, new_ref, &self.cache_dir)?,
-                    AssetKind::Image => return Err(AetherError::InvalidCommand("Cannot trim image asset".to_string())),
-                    AssetKind::Animation => return Err(AetherError::InvalidCommand("Cannot trim animation asset".to_string())),
+                    AssetKind::Video => {
+                        aether_video::trim_video(&original, start, end, new_ref, &self.cache_dir)?
+                    }
+                    AssetKind::Audio => {
+                        aether_audio::trim_audio(&original, start, end, new_ref, &self.cache_dir)?
+                    }
+                    AssetKind::Image => {
+                        return Err(AetherError::InvalidCommand(
+                            "Cannot trim image asset".to_string(),
+                        ))
+                    }
+                    AssetKind::Animation => {
+                        return Err(AetherError::InvalidCommand(
+                            "Cannot trim animation asset".to_string(),
+                        ))
+                    }
                 };
 
                 self.registry.register(trimmed.r, trimmed.clone())?;
@@ -507,60 +580,118 @@ impl SessionManager {
             Command::Mix { r, volume } => {
                 let original = self.registry.resolve(r)?;
                 if original.kind != AssetKind::Audio {
-                    return Err(AetherError::InvalidCommand("Mix command is only supported for audio assets".to_string()));
+                    return Err(AetherError::InvalidCommand(
+                        "Mix command is only supported for audio assets".to_string(),
+                    ));
                 }
                 let new_ref = self.registry.reserve_next(RefKind::Audio);
                 *affected_ref = Some(new_ref);
 
-                let mixed = aether_audio::normalize_audio(&original, *volume, -1.0, new_ref, &self.cache_dir)?;
+                let mixed = aether_audio::normalize_audio(
+                    &original,
+                    *volume,
+                    -1.0,
+                    new_ref,
+                    &self.cache_dir,
+                )?;
                 self.registry.register(mixed.r, mixed.clone())?;
                 db.save_asset(&mixed)?;
                 msg = format!("Mixed audio asset successfully registered as {}", mixed.r);
             }
-            Command::Composite { base, overlay, at, x, y } => {
+            Command::Composite {
+                base,
+                overlay,
+                at,
+                x,
+                y,
+            } => {
                 let base_asset = self.registry.resolve(base)?;
                 let overlay_asset = self.registry.resolve(overlay)?;
-                
+
                 let new_ref = self.registry.reserve_next(RefKind::Video);
                 *affected_ref = Some(new_ref);
 
                 let composited = aether_video::composite_video(
-                    &base_asset, &overlay_asset, at, *x, *y, new_ref, &self.cache_dir
+                    &base_asset,
+                    &overlay_asset,
+                    at,
+                    *x,
+                    *y,
+                    new_ref,
+                    &self.cache_dir,
                 )?;
                 self.registry.register(composited.r, composited.clone())?;
                 db.save_asset(&composited)?;
-                msg = format!("Composited asset successfully registered as {}", composited.r);
+                msg = format!(
+                    "Composited asset successfully registered as {}",
+                    composited.r
+                );
             }
-            Command::Canvas { width, height, color } => {
+            Command::Canvas {
+                width,
+                height,
+                color,
+            } => {
                 let r = self.registry.reserve_next(RefKind::Image);
                 *affected_ref = Some(r);
 
-                let canvas = aether_image::create_canvas(*width, *height, color, r, &self.cache_dir)?;
+                let canvas =
+                    aether_image::create_canvas(*width, *height, color, r, &self.cache_dir)?;
                 self.registry.register(canvas.r, canvas.clone())?;
                 db.save_asset(&canvas)?;
                 msg = format!("Canvas successfully registered as {}", canvas.r);
             }
-            Command::DrawText { r, text, font, size, x, y } => {
+            Command::DrawText {
+                r,
+                text,
+                font,
+                size,
+                x,
+                y,
+            } => {
                 let original = self.registry.resolve(r)?;
                 if original.kind != AssetKind::Image {
-                    return Err(AetherError::InvalidCommand("DrawText is only supported on image assets".to_string()));
+                    return Err(AetherError::InvalidCommand(
+                        "DrawText is only supported on image assets".to_string(),
+                    ));
                 }
                 let new_ref = self.registry.reserve_next(RefKind::Image);
                 *affected_ref = Some(new_ref);
 
                 let text_overlay = aether_image::draw_text(
-                    &original, text, font, *size, *x as f32, *y as f32, "white", new_ref, &self.cache_dir
+                    &original,
+                    text,
+                    font,
+                    *size,
+                    *x as f32,
+                    *y as f32,
+                    "white",
+                    new_ref,
+                    &self.cache_dir,
                 )?;
-                self.registry.register(text_overlay.r, text_overlay.clone())?;
+                self.registry
+                    .register(text_overlay.r, text_overlay.clone())?;
                 db.save_asset(&text_overlay)?;
-                msg = format!("Text overlay asset successfully registered as {}", text_overlay.r);
+                msg = format!(
+                    "Text overlay asset successfully registered as {}",
+                    text_overlay.r
+                );
             }
-            Command::Export { r, format, codec, quality } => {
+            Command::Export {
+                r,
+                format,
+                codec,
+                quality,
+            } => {
                 let asset = self.registry.resolve(r)?;
                 let export_dir = self.project_dir.join("export");
                 if !export_dir.exists() {
-                    fs::create_dir_all(&export_dir)
-                        .map_err(|e| AetherError::IoError(export_dir.to_string_lossy().to_string(), e.to_string()))?;
+                    fs::create_dir_all(&export_dir).map_err(|e| {
+                        AetherError::IoError(
+                            export_dir.to_string_lossy().to_string(),
+                            e.to_string(),
+                        )
+                    })?;
                 }
                 let dest_file = export_dir.join(format!("{}.{}", asset.hash, format));
 
@@ -572,12 +703,21 @@ impl SessionManager {
                         aether_image::export_image(&asset, &dest_file)?;
                     }
                     _ => {
-                        return Err(AetherError::InvalidCommand("Export only supported for Video and Image assets".to_string()));
+                        return Err(AetherError::InvalidCommand(
+                            "Export only supported for Video and Image assets".to_string(),
+                        ));
                     }
                 }
-                msg = format!("Asset successfully exported to {}", dest_file.to_string_lossy());
+                msg = format!(
+                    "Asset successfully exported to {}",
+                    dest_file.to_string_lossy()
+                );
             }
-            Command::Concat { refs, transition, duration_ms } => {
+            Command::Concat {
+                refs,
+                transition,
+                duration_ms,
+            } => {
                 let mut timeline = self.timeline.write().unwrap();
                 let mut clips = Vec::new();
                 let mut current_offset = 0u64;
@@ -595,11 +735,21 @@ impl SessionManager {
                     let duration = match asset.kind {
                         AssetKind::Video => {
                             track_kind = TrackKind::Video;
-                            asset.metadata.get("duration").and_then(|v| v.as_f64()).map(|d| (d * 1000.0) as u64).unwrap_or(5000)
+                            asset
+                                .metadata
+                                .get("duration")
+                                .and_then(|v| v.as_f64())
+                                .map(|d| (d * 1000.0) as u64)
+                                .unwrap_or(5000)
                         }
                         AssetKind::Audio => {
                             track_kind = TrackKind::Audio;
-                            asset.metadata.get("duration").and_then(|v| v.as_f64()).map(|d| (d * 1000.0) as u64).unwrap_or(5000)
+                            asset
+                                .metadata
+                                .get("duration")
+                                .and_then(|v| v.as_f64())
+                                .map(|d| (d * 1000.0) as u64)
+                                .unwrap_or(5000)
                         }
                         AssetKind::Image => {
                             track_kind = TrackKind::Video;
@@ -631,7 +781,14 @@ impl SessionManager {
                 db.save_timeline(&timeline)?;
                 msg = "Concat track created successfully".to_string();
             }
-            Command::Overlay { base, overlay, x: _, y: _, blend, opacity } => {
+            Command::Overlay {
+                base,
+                overlay,
+                x: _,
+                y: _,
+                blend,
+                opacity,
+            } => {
                 let _base_asset = self.registry.resolve(base)?;
                 let _overlay_asset = self.registry.resolve(overlay)?;
 
@@ -650,18 +807,48 @@ impl SessionManager {
                 };
                 let op = opacity.unwrap_or(1.0);
 
-                graph.add_node(Node { id: base_node_id, kind: NodeKind::Source(*base) });
-                graph.add_node(Node { id: overlay_node_id, kind: NodeKind::Source(*overlay) });
-                graph.add_node(Node { id: blend_node_id, kind: NodeKind::Blend { mode, opacity: op } });
-                graph.add_node(Node { id: output_node_id, kind: NodeKind::Output });
+                graph.add_node(Node {
+                    id: base_node_id,
+                    kind: NodeKind::Source(*base),
+                });
+                graph.add_node(Node {
+                    id: overlay_node_id,
+                    kind: NodeKind::Source(*overlay),
+                });
+                graph.add_node(Node {
+                    id: blend_node_id,
+                    kind: NodeKind::Blend { mode, opacity: op },
+                });
+                graph.add_node(Node {
+                    id: output_node_id,
+                    kind: NodeKind::Output,
+                });
 
-                graph.connect(GraphConnection { from_node: base_node_id, from_port: 0, to_node: blend_node_id, to_port: 0 })?;
-                graph.connect(GraphConnection { from_node: overlay_node_id, from_port: 0, to_node: blend_node_id, to_port: 1 })?;
-                graph.connect(GraphConnection { from_node: blend_node_id, from_port: 0, to_node: output_node_id, to_port: 0 })?;
+                graph.connect(GraphConnection {
+                    from_node: base_node_id,
+                    from_port: 0,
+                    to_node: blend_node_id,
+                    to_port: 0,
+                })?;
+                graph.connect(GraphConnection {
+                    from_node: overlay_node_id,
+                    from_port: 0,
+                    to_node: blend_node_id,
+                    to_port: 1,
+                })?;
+                graph.connect(GraphConnection {
+                    from_node: blend_node_id,
+                    from_port: 0,
+                    to_node: output_node_id,
+                    to_port: 0,
+                })?;
                 graph.output_node = Some(output_node_id);
 
                 db.save_graph(&graph)?;
-                msg = format!("Composite overlay graph created successfully with output node {}", output_node_id);
+                msg = format!(
+                    "Composite overlay graph created successfully with output node {}",
+                    output_node_id
+                );
             }
             Command::Speed { r, factor } => {
                 let original = self.registry.resolve(r)?;
@@ -677,20 +864,32 @@ impl SessionManager {
 
                 self.registry.register(speed_asset.r, speed_asset.clone())?;
                 db.save_asset(&speed_asset)?;
-                msg = format!("Speed-adjusted asset successfully registered as {}", speed_asset.r);
+                msg = format!(
+                    "Speed-adjusted asset successfully registered as {}",
+                    speed_asset.r
+                );
             }
             Command::Inspect { r, start, end } => {
                 if let Some(asset_ref) = r {
                     let asset = self.registry.resolve(asset_ref)?;
-                    
-                    let start_t = start.as_ref().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0);
-                    let end_t = end.as_ref().and_then(|s| s.parse::<f64>().ok()).unwrap_or(2.0);
+
+                    let start_t = start
+                        .as_ref()
+                        .and_then(|s| s.parse::<f64>().ok())
+                        .unwrap_or(0.0);
+                    let end_t = end
+                        .as_ref()
+                        .and_then(|s| s.parse::<f64>().ok())
+                        .unwrap_or(2.0);
                     let mid_t = (start_t + end_t) / 2.0;
 
                     let duration_sec = match asset.kind {
-                        AssetKind::Video | AssetKind::Audio => {
-                            asset.metadata.get("duration").and_then(|v| v.as_f64()).map(|d| d as f32).unwrap_or(0.0)
-                        }
+                        AssetKind::Video | AssetKind::Audio => asset
+                            .metadata
+                            .get("duration")
+                            .and_then(|v| v.as_f64())
+                            .map(|d| d as f32)
+                            .unwrap_or(0.0),
                         AssetKind::Image | AssetKind::Animation => 0.0,
                     };
 
@@ -703,56 +902,77 @@ impl SessionManager {
 
                     match asset.kind {
                         AssetKind::Video => {
-                            let proxy_vid_p = self.cache_dir.join(format!("proxy_vid_{}.mp4", asset.hash));
+                            let proxy_vid_p =
+                                self.cache_dir.join(format!("proxy_vid_{}.mp4", asset.hash));
                             if proxy_vid_p.exists() {
                                 proxy_video_path = Some(proxy_vid_p.to_string_lossy().to_string());
                             } else {
-                                if let Ok(p) = observation::generate_video_proxy(&asset.path, &proxy_vid_p) {
+                                if let Ok(p) =
+                                    observation::generate_video_proxy(&asset.path, &proxy_vid_p)
+                                {
                                     proxy_video_path = Some(p.to_string_lossy().to_string());
                                 }
                             }
 
-                            let proxy_aud_p = self.cache_dir.join(format!("proxy_aud_{}.mp3", asset.hash));
+                            let proxy_aud_p =
+                                self.cache_dir.join(format!("proxy_aud_{}.mp3", asset.hash));
                             if proxy_aud_p.exists() {
                                 proxy_audio_path = Some(proxy_aud_p.to_string_lossy().to_string());
                             } else {
-                                if let Ok(p) = observation::generate_audio_proxy(&asset.path, &proxy_aud_p) {
+                                if let Ok(p) =
+                                    observation::generate_audio_proxy(&asset.path, &proxy_aud_p)
+                                {
                                     proxy_audio_path = Some(p.to_string_lossy().to_string());
                                 }
                             }
 
-                            let output_dir = self.cache_dir.join(format!("inspect_frames_{}", asset.hash));
+                            let output_dir = self
+                                .cache_dir
+                                .join(format!("inspect_frames_{}", asset.hash));
                             let times = vec![start_t, mid_t, end_t];
                             let mut frames = Vec::new();
-                            if let Ok(f) = observation::extract_keyframes(&asset.path, &times, &output_dir) {
+                            if let Ok(f) =
+                                observation::extract_keyframes(&asset.path, &times, &output_dir)
+                            {
                                 frames = f;
-                                let contact_p = self.cache_dir.join(format!("contact_sheet_{}.png", asset.hash));
-                                if observation::generate_contact_sheet(&frames, 3, 1, &contact_p).is_ok() {
-                                    contact_sheet_path = Some(contact_p.to_string_lossy().to_string());
+                                let contact_p = self
+                                    .cache_dir
+                                    .join(format!("contact_sheet_{}.png", asset.hash));
+                                if observation::generate_contact_sheet(&frames, 3, 1, &contact_p)
+                                    .is_ok()
+                                {
+                                    contact_sheet_path =
+                                        Some(contact_p.to_string_lossy().to_string());
                                 }
                             }
 
                             rms = observation::analyze_audio_rms(&asset.path).unwrap_or_default();
-                            anomalies = observation::detect_anomalies(&rms, &frames).unwrap_or_default();
+                            anomalies =
+                                observation::detect_anomalies(&rms, &frames).unwrap_or_default();
                             audio_peaks_sec = observation::detect_audio_transients(&rms, 10.0);
                         }
                         AssetKind::Audio => {
-                            let proxy_aud_p = self.cache_dir.join(format!("proxy_aud_{}.mp3", asset.hash));
+                            let proxy_aud_p =
+                                self.cache_dir.join(format!("proxy_aud_{}.mp3", asset.hash));
                             if proxy_aud_p.exists() {
                                 proxy_audio_path = Some(proxy_aud_p.to_string_lossy().to_string());
                             } else {
-                                if let Ok(p) = observation::generate_audio_proxy(&asset.path, &proxy_aud_p) {
+                                if let Ok(p) =
+                                    observation::generate_audio_proxy(&asset.path, &proxy_aud_p)
+                                {
                                     proxy_audio_path = Some(p.to_string_lossy().to_string());
                                 }
                             }
 
                             rms = observation::analyze_audio_rms(&asset.path).unwrap_or_default();
-                            anomalies = observation::detect_anomalies(&rms, &[]).unwrap_or_default();
+                            anomalies =
+                                observation::detect_anomalies(&rms, &[]).unwrap_or_default();
                             audio_peaks_sec = observation::detect_audio_transients(&rms, 10.0);
                         }
                         AssetKind::Image | AssetKind::Animation => {
                             let frames = vec![asset.path.clone()];
-                            anomalies = observation::detect_anomalies(&[], &frames).unwrap_or_default();
+                            anomalies =
+                                observation::detect_anomalies(&[], &frames).unwrap_or_default();
                         }
                     }
 
@@ -775,10 +995,18 @@ impl SessionManager {
                     msg = "No asset reference specified for inspection".to_string();
                 }
             }
-            Command::Eq { r, filter_type, freq_hz, gain_db, q } => {
+            Command::Eq {
+                r,
+                filter_type,
+                freq_hz,
+                gain_db,
+                q,
+            } => {
                 let original = self.registry.resolve(r)?;
                 if original.kind != AssetKind::Audio {
-                    return Err(AetherError::InvalidCommand("Eq is only supported for audio assets".to_string()));
+                    return Err(AetherError::InvalidCommand(
+                        "Eq is only supported for audio assets".to_string(),
+                    ));
                 }
                 let new_ref = self.registry.reserve_next(RefKind::Audio);
                 *affected_ref = Some(new_ref);
@@ -797,10 +1025,18 @@ impl SessionManager {
                 db.save_asset(&eq_asset)?;
                 msg = format!("EQ filtered audio asset registered as {}", eq_asset.r);
             }
-            Command::Compress { r, threshold_db, ratio, attack_ms, release_ms } => {
+            Command::Compress {
+                r,
+                threshold_db,
+                ratio,
+                attack_ms,
+                release_ms,
+            } => {
                 let original = self.registry.resolve(r)?;
                 if original.kind != AssetKind::Audio {
-                    return Err(AetherError::InvalidCommand("Compress is only supported for audio assets".to_string()));
+                    return Err(AetherError::InvalidCommand(
+                        "Compress is only supported for audio assets".to_string(),
+                    ));
                 }
                 let new_ref = self.registry.reserve_next(RefKind::Audio);
                 *affected_ref = Some(new_ref);
@@ -819,7 +1055,11 @@ impl SessionManager {
                 db.save_asset(&comp_asset)?;
                 msg = format!("Compressed audio asset registered as {}", comp_asset.r);
             }
-            Command::MixTracks { refs, volumes, pans } => {
+            Command::MixTracks {
+                refs,
+                volumes,
+                pans,
+            } => {
                 let new_ref = self.registry.reserve_next(RefKind::Audio);
                 *affected_ref = Some(new_ref);
 
@@ -828,22 +1068,26 @@ impl SessionManager {
                     assets.push(self.registry.resolve(r)?.clone());
                 }
 
-                let mixed_asset = aether_audio::mix_tracks(
-                    &assets,
-                    volumes,
-                    pans,
-                    new_ref,
-                    &self.cache_dir,
-                )?;
+                let mixed_asset =
+                    aether_audio::mix_tracks(&assets, volumes, pans, new_ref, &self.cache_dir)?;
 
                 self.registry.register(mixed_asset.r, mixed_asset.clone())?;
                 db.save_asset(&mixed_asset)?;
                 msg = format!("Mixed track audio asset registered as {}", mixed_asset.r);
             }
-            Command::KeyframeSet { r, property, time_ms, value, easing } => {
+            Command::KeyframeSet {
+                r,
+                property,
+                time_ms,
+                value,
+                easing,
+            } => {
                 let ease_str = easing.as_deref().unwrap_or("Linear");
                 db.save_keyframe(&r.to_string(), property, *time_ms, *value, ease_str)?;
-                msg = format!("Keyframe set successfully: {} = {} at {}ms", property, value, time_ms);
+                msg = format!(
+                    "Keyframe set successfully: {} = {} at {}ms",
+                    property, value, time_ms
+                );
             }
             Command::KeyframeList { r, property } => {
                 let kfs = db.load_keyframes(&r.to_string(), property)?;
@@ -851,7 +1095,12 @@ impl SessionManager {
                 for k in kfs {
                     list.push(format!("{}ms: {} ({})", k.0, k.1, k.2));
                 }
-                msg = format!("Keyframes for {} (property: {}):\n{}", r, property, list.join("\n"));
+                msg = format!(
+                    "Keyframes for {} (property: {}):\n{}",
+                    r,
+                    property,
+                    list.join("\n")
+                );
             }
             Command::ExportEdl { output_path } => {
                 let timeline = self.timeline.read().unwrap();
@@ -866,7 +1115,9 @@ impl SessionManager {
             Command::Undo => {
                 let cur_commit = self.current_commit.read().unwrap().clone();
                 if cur_commit.is_empty() {
-                    return Err(AetherError::OperationFailed("Already at first history state".to_string()));
+                    return Err(AetherError::OperationFailed(
+                        "Already at first history state".to_string(),
+                    ));
                 }
                 let history = db.load_history()?;
                 let parent = if let Some(pos) = history.iter().position(|h| h.0 == cur_commit) {
@@ -882,16 +1133,24 @@ impl SessionManager {
                 let cur_commit = self.current_commit.read().unwrap().clone();
                 let history = db.load_history()?;
                 let cur_branch = self.current_branch.read().unwrap().clone();
-                let next_commit = history.iter().find(|h| h.1.as_deref() == Some(&cur_commit) && h.2 == cur_branch);
+                let next_commit = history
+                    .iter()
+                    .find(|h| h.1.as_deref() == Some(&cur_commit) && h.2 == cur_branch);
 
                 if let Some(h) = next_commit {
                     self.checkout_commit(db, &h.0)?;
                     msg = format!("Successfully fast-forwarded project to state '{}'", h.0);
                 } else {
-                    return Err(AetherError::OperationFailed("Already at newest history state".to_string()));
+                    return Err(AetherError::OperationFailed(
+                        "Already at newest history state".to_string(),
+                    ));
                 }
             }
-            Command::GenerateStoryboardScratch { request, model, options } => {
+            Command::GenerateStoryboardScratch {
+                request,
+                model,
+                options,
+            } => {
                 msg = self.execute_generation_request(
                     db,
                     GenerationKind::StoryboardScratch,
@@ -902,7 +1161,11 @@ impl SessionManager {
                     affected_ref,
                 )?;
             }
-            Command::GenerateDialogue { request, model, options } => {
+            Command::GenerateDialogue {
+                request,
+                model,
+                options,
+            } => {
                 msg = self.execute_generation_request(
                     db,
                     GenerationKind::Dialogue,
@@ -913,11 +1176,17 @@ impl SessionManager {
                     affected_ref,
                 )?;
             }
-            Command::GenerateImage { request, model, inputs, options } => {
+            Command::GenerateImage {
+                request,
+                model,
+                inputs,
+                options,
+            } => {
                 // Validate inputs are existing assets
                 for input in inputs {
-                    self.registry.resolve(input)
-                        .map_err(|_| AetherError::InvalidCommand(format!("Input reference {} not found", input)))?;
+                    self.registry.resolve(input).map_err(|_| {
+                        AetherError::InvalidCommand(format!("Input reference {} not found", input))
+                    })?;
                 }
                 msg = self.execute_generation_request(
                     db,
@@ -929,12 +1198,21 @@ impl SessionManager {
                     affected_ref,
                 )?;
             }
-            Command::EditImage { target, request, model, options } => {
+            Command::EditImage {
+                target,
+                request,
+                model,
+                options,
+            } => {
                 // Validate target is an existing image asset
-                let asset = self.registry.resolve(target)
-                    .map_err(|_| AetherError::InvalidCommand(format!("Image reference {} not found", target)))?;
+                let asset = self.registry.resolve(target).map_err(|_| {
+                    AetherError::InvalidCommand(format!("Image reference {} not found", target))
+                })?;
                 if asset.kind != AssetKind::Image {
-                    return Err(AetherError::InvalidCommand(format!("Reference {} is not an image asset", target)));
+                    return Err(AetherError::InvalidCommand(format!(
+                        "Reference {} is not an image asset",
+                        target
+                    )));
                 }
 
                 msg = self.execute_generation_request(
@@ -947,7 +1225,12 @@ impl SessionManager {
                     affected_ref,
                 )?;
             }
-            Command::GenerateVoice { text, voice, model, options } => {
+            Command::GenerateVoice {
+                text,
+                voice,
+                model,
+                options,
+            } => {
                 msg = self.execute_generation_request(
                     db,
                     GenerationKind::Voice,
@@ -958,12 +1241,21 @@ impl SessionManager {
                     affected_ref,
                 )?;
             }
-            Command::CloneVoice { sample, name, model, options } => {
+            Command::CloneVoice {
+                sample,
+                name,
+                model,
+                options,
+            } => {
                 // Validate sample is an existing audio asset
-                let asset = self.registry.resolve(sample)
-                    .map_err(|_| AetherError::InvalidCommand(format!("Audio reference {} not found", sample)))?;
+                let asset = self.registry.resolve(sample).map_err(|_| {
+                    AetherError::InvalidCommand(format!("Audio reference {} not found", sample))
+                })?;
                 if asset.kind != AssetKind::Audio {
-                    return Err(AetherError::InvalidCommand(format!("Reference {} is not an audio asset", sample)));
+                    return Err(AetherError::InvalidCommand(format!(
+                        "Reference {} is not an audio asset",
+                        sample
+                    )));
                 }
 
                 msg = self.execute_generation_request(
@@ -976,7 +1268,11 @@ impl SessionManager {
                     affected_ref,
                 )?;
             }
-            Command::GenerateSceneAudio { request, model, options } => {
+            Command::GenerateSceneAudio {
+                request,
+                model,
+                options,
+            } => {
                 msg = self.execute_generation_request(
                     db,
                     GenerationKind::SceneAudio,
@@ -987,7 +1283,11 @@ impl SessionManager {
                     affected_ref,
                 )?;
             }
-            Command::GenerateMusic { request, model, options } => {
+            Command::GenerateMusic {
+                request,
+                model,
+                options,
+            } => {
                 msg = self.execute_generation_request(
                     db,
                     GenerationKind::Music,
@@ -998,7 +1298,11 @@ impl SessionManager {
                     affected_ref,
                 )?;
             }
-            Command::GenerateVideoFromText { request, model, options } => {
+            Command::GenerateVideoFromText {
+                request,
+                model,
+                options,
+            } => {
                 msg = self.execute_generation_request(
                     db,
                     GenerationKind::VideoText,
@@ -1009,12 +1313,21 @@ impl SessionManager {
                     affected_ref,
                 )?;
             }
-            Command::GenerateVideoFromFrame { frame, request, model, options } => {
+            Command::GenerateVideoFromFrame {
+                frame,
+                request,
+                model,
+                options,
+            } => {
                 // Validate frame is an existing image asset
-                let asset = self.registry.resolve(frame)
-                    .map_err(|_| AetherError::InvalidCommand(format!("Image reference {} not found", frame)))?;
+                let asset = self.registry.resolve(frame).map_err(|_| {
+                    AetherError::InvalidCommand(format!("Image reference {} not found", frame))
+                })?;
                 if asset.kind != AssetKind::Image {
-                    return Err(AetherError::InvalidCommand(format!("Reference {} is not an image asset", frame)));
+                    return Err(AetherError::InvalidCommand(format!(
+                        "Reference {} is not an image asset",
+                        frame
+                    )));
                 }
 
                 msg = self.execute_generation_request(
@@ -1027,11 +1340,17 @@ impl SessionManager {
                     affected_ref,
                 )?;
             }
-            Command::GenerateVideoFromIngredients { inputs, request, model, options } => {
+            Command::GenerateVideoFromIngredients {
+                inputs,
+                request,
+                model,
+                options,
+            } => {
                 // Validate inputs are existing assets
                 for input in inputs {
-                    self.registry.resolve(input)
-                        .map_err(|_| AetherError::InvalidCommand(format!("Input reference {} not found", input)))?;
+                    self.registry.resolve(input).map_err(|_| {
+                        AetherError::InvalidCommand(format!("Input reference {} not found", input))
+                    })?;
                 }
                 msg = self.execute_generation_request(
                     db,
@@ -1043,12 +1362,21 @@ impl SessionManager {
                     affected_ref,
                 )?;
             }
-            Command::EditVideo { target, request, model, options } => {
+            Command::EditVideo {
+                target,
+                request,
+                model,
+                options,
+            } => {
                 // Validate target is an existing video asset
-                let asset = self.registry.resolve(target)
-                    .map_err(|_| AetherError::InvalidCommand(format!("Video reference {} not found", target)))?;
+                let asset = self.registry.resolve(target).map_err(|_| {
+                    AetherError::InvalidCommand(format!("Video reference {} not found", target))
+                })?;
                 if asset.kind != AssetKind::Video {
-                    return Err(AetherError::InvalidCommand(format!("Reference {} is not a video asset", target)));
+                    return Err(AetherError::InvalidCommand(format!(
+                        "Reference {} is not a video asset",
+                        target
+                    )));
                 }
 
                 msg = self.execute_generation_request(
@@ -1072,13 +1400,21 @@ impl SessionManager {
                 msg = match r {
                     Some(job_ref) => {
                         let job = db.load_generation_job(job_ref)?;
-                        serde_json::to_string_pretty(&job)
-                            .map_err(|e| AetherError::OperationFailed(format!("Serialize GenerationJob failed: {}", e)))?
+                        serde_json::to_string_pretty(&job).map_err(|e| {
+                            AetherError::OperationFailed(format!(
+                                "Serialize GenerationJob failed: {}",
+                                e
+                            ))
+                        })?
                     }
                     None => {
                         let all_jobs = db.load_all_generation_jobs()?;
-                        serde_json::to_string_pretty(&all_jobs)
-                            .map_err(|e| AetherError::OperationFailed(format!("Serialize Vec<GenerationJob> failed: {}", e)))?
+                        serde_json::to_string_pretty(&all_jobs).map_err(|e| {
+                            AetherError::OperationFailed(format!(
+                                "Serialize Vec<GenerationJob> failed: {}",
+                                e
+                            ))
+                        })?
                     }
                 };
             }
@@ -1089,24 +1425,27 @@ impl SessionManager {
                 msg = "Daemon shutting down...".to_string();
             }
             _ => {
-                return Err(AetherError::InvalidCommand("Unsupported command".to_string()));
+                return Err(AetherError::InvalidCommand(
+                    "Unsupported command".to_string(),
+                ));
             }
         }
         Ok(msg)
     }
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn temp_project_dir() -> PathBuf {
-        let unique_dir = format!("test_project_{}", std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos());
+        let unique_dir = format!(
+            "test_project_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
         std::env::temp_dir().join(unique_dir)
     }
 
@@ -1217,12 +1556,20 @@ mod tests {
         let session = SessionManager::new(&dir).unwrap();
 
         // 1. Create Canvas (Image Asset @img1) to act as base
-        let cmd_canvas1 = Command::Canvas { width: 100, height: 100, color: "blue".to_string() };
+        let cmd_canvas1 = Command::Canvas {
+            width: 100,
+            height: 100,
+            color: "blue".to_string(),
+        };
         let res_canvas1 = session.execute(cmd_canvas1).unwrap();
         let canvas1_ref = res_canvas1.affected_ref.unwrap();
 
         // 2. Create another Canvas (Image Asset @img2) to act as overlay
-        let cmd_canvas2 = Command::Canvas { width: 100, height: 100, color: "green".to_string() };
+        let cmd_canvas2 = Command::Canvas {
+            width: 100,
+            height: 100,
+            color: "green".to_string(),
+        };
         let res_canvas2 = session.execute(cmd_canvas2).unwrap();
         let canvas2_ref = res_canvas2.affected_ref.unwrap();
 
@@ -1237,7 +1584,7 @@ mod tests {
         };
         let res_overlay = session.execute(cmd_overlay).unwrap();
         assert!(res_overlay.success);
-        
+
         let snap = session.get_snapshot().unwrap();
         assert_eq!(snap.graph.nodes.len(), 4);
         assert!(snap.graph.output_node.is_some());
@@ -1257,12 +1604,22 @@ mod tests {
         assert_eq!(snap.timeline.tracks[0].clips[0].asset_ref, canvas1_ref);
 
         // 5. Test Speed
-        let cmd_speed = Command::Speed { r: canvas1_ref, factor: 2.0 };
+        let cmd_speed = Command::Speed {
+            r: canvas1_ref,
+            factor: 2.0,
+        };
         let res_speed = session.execute(cmd_speed).unwrap();
         assert!(res_speed.success);
         let speed_ref = res_speed.affected_ref.unwrap();
         let speed_asset = session.registry.resolve(&speed_ref).unwrap();
-        assert_eq!(speed_asset.metadata.get("speed_factor").and_then(|v| v.as_f64()).unwrap(), 2.0);
+        assert_eq!(
+            speed_asset
+                .metadata
+                .get("speed_factor")
+                .and_then(|v| v.as_f64())
+                .unwrap(),
+            2.0
+        );
 
         // 6. Test Keyframes
         let cmd_kf_set = Command::KeyframeSet {
@@ -1285,25 +1642,33 @@ mod tests {
 
         // 7. Test Export EDL and OTIO
         let edl_path = dir.join("export.edl");
-        let cmd_edl = Command::ExportEdl { output_path: edl_path.to_string_lossy().to_string() };
+        let cmd_edl = Command::ExportEdl {
+            output_path: edl_path.to_string_lossy().to_string(),
+        };
         let res_edl = session.execute(cmd_edl).unwrap();
         assert!(res_edl.success);
         assert!(edl_path.exists());
 
         let otio_path = dir.join("export.otio");
-        let cmd_otio = Command::ExportOtio { output_path: otio_path.to_string_lossy().to_string() };
+        let cmd_otio = Command::ExportOtio {
+            output_path: otio_path.to_string_lossy().to_string(),
+        };
         let res_otio = session.execute(cmd_otio).unwrap();
         assert!(res_otio.success);
         assert!(otio_path.exists());
 
         // 8. Test Branch & Checkout
         // Create new branch "dev" pointing to current state
-        let cmd_branch = Command::Branch { name: "dev".to_string() };
+        let cmd_branch = Command::Branch {
+            name: "dev".to_string(),
+        };
         let res_branch = session.execute(cmd_branch).unwrap();
         assert!(res_branch.success);
 
         // Switch back to "main" (which was detached or active)
-        let cmd_checkout = Command::Checkout { name: "dev".to_string() };
+        let cmd_checkout = Command::Checkout {
+            name: "dev".to_string(),
+        };
         let res_checkout = session.execute(cmd_checkout).unwrap();
         assert!(res_checkout.success);
 
@@ -1316,7 +1681,11 @@ mod tests {
         let session = SessionManager::new(&dir).unwrap();
 
         // 1. Create Canvas
-        let cmd_canvas = Command::Canvas { width: 100, height: 100, color: "red".to_string() };
+        let cmd_canvas = Command::Canvas {
+            width: 100,
+            height: 100,
+            color: "red".to_string(),
+        };
         let res_canvas = session.execute(cmd_canvas).unwrap();
         let canvas_ref = res_canvas.affected_ref.unwrap();
 
@@ -1328,7 +1697,8 @@ mod tests {
         };
         let res_inspect = session.execute(cmd_inspect).unwrap();
         assert!(res_inspect.success);
-        let obs: SmartObservation = serde_json::from_str(&res_inspect.message).expect("Failed to parse SmartObservation JSON");
+        let obs: SmartObservation = serde_json::from_str(&res_inspect.message)
+            .expect("Failed to parse SmartObservation JSON");
         assert_eq!(obs.asset_kind, AssetKind::Image);
         assert!(obs.telemetry.anomalies.is_empty());
 
@@ -1341,7 +1711,11 @@ mod tests {
         let session = SessionManager::new(&dir).unwrap();
 
         // 1. Create a valid Canvas (Image Asset)
-        let cmd_canvas = Command::Canvas { width: 100, height: 100, color: "blue".to_string() };
+        let cmd_canvas = Command::Canvas {
+            width: 100,
+            height: 100,
+            color: "blue".to_string(),
+        };
         let res_canvas = session.execute(cmd_canvas).unwrap();
         assert!(res_canvas.success);
         let canvas_ref = res_canvas.affected_ref.unwrap();
@@ -1356,7 +1730,10 @@ mod tests {
             end: "1.0".to_string(),
         };
         let res_invalid = session.execute(cmd_invalid);
-        assert!(res_invalid.is_err(), "Expected command to fail and return an Err");
+        assert!(
+            res_invalid.is_err(),
+            "Expected command to fail and return an Err"
+        );
 
         // 3. Verify in-memory state is completely rolled back
         let snap_after = session.get_snapshot().unwrap();
@@ -1393,7 +1770,11 @@ mod tests {
         let session = SessionManager::new(&dir).unwrap();
 
         // 1. Create a canvas on "main" branch
-        let cmd_canvas = Command::Canvas { width: 100, height: 100, color: "red".to_string() };
+        let cmd_canvas = Command::Canvas {
+            width: 100,
+            height: 100,
+            color: "red".to_string(),
+        };
         let res_canvas = session.execute(cmd_canvas).unwrap();
         let canvas_ref = res_canvas.affected_ref.unwrap();
 
@@ -1402,15 +1783,22 @@ mod tests {
         assert_eq!(snap_main_init.assets.len(), 1);
 
         // 2. Create new branch "feature-edit"
-        let cmd_branch = Command::Branch { name: "feature-edit".to_string() };
+        let cmd_branch = Command::Branch {
+            name: "feature-edit".to_string(),
+        };
         let res_branch = session.execute(cmd_branch).unwrap();
         assert!(res_branch.success);
 
         // 3. Switch to "feature-edit" branch
-        let cmd_checkout_feature = Command::Checkout { name: "feature-edit".to_string() };
+        let cmd_checkout_feature = Command::Checkout {
+            name: "feature-edit".to_string(),
+        };
         let res_checkout_feature = session.execute(cmd_checkout_feature).unwrap();
         assert!(res_checkout_feature.success);
-        assert_eq!(session.current_branch.read().unwrap().clone(), "feature-edit");
+        assert_eq!(
+            session.current_branch.read().unwrap().clone(),
+            "feature-edit"
+        );
 
         // 4. Modify asset on "feature-edit" branch by drawing text
         let cmd_draw = Command::DrawText {
@@ -1426,12 +1814,17 @@ mod tests {
         let text_ref = res_draw.affected_ref.unwrap();
 
         let snap_feature = session.get_snapshot().unwrap();
-        assert_eq!(session.current_branch.read().unwrap().clone(), "feature-edit");
+        assert_eq!(
+            session.current_branch.read().unwrap().clone(),
+            "feature-edit"
+        );
         assert_eq!(snap_feature.assets.len(), 2);
         assert!(session.registry.resolve(&text_ref).is_ok());
 
         // 5. Checkout "main" branch again
-        let cmd_checkout_main = Command::Checkout { name: "main".to_string() };
+        let cmd_checkout_main = Command::Checkout {
+            name: "main".to_string(),
+        };
         let res_checkout_main = session.execute(cmd_checkout_main).unwrap();
         assert!(res_checkout_main.success);
 
@@ -1443,16 +1836,26 @@ mod tests {
         // Verify database active assets contains only 1 asset on main branch
         {
             let db = session.db.lock().unwrap();
-            let active_assets = db.load_checkpoint(&session.current_commit.read().unwrap().clone()).unwrap().2;
+            let active_assets = db
+                .load_checkpoint(&session.current_commit.read().unwrap().clone())
+                .unwrap()
+                .2;
             assert_eq!(active_assets.len(), 1);
         }
 
         // 6. Checkout "feature-edit" branch again
-        let res_checkout_feature_again = session.execute(Command::Checkout { name: "feature-edit".to_string() }).unwrap();
+        let res_checkout_feature_again = session
+            .execute(Command::Checkout {
+                name: "feature-edit".to_string(),
+            })
+            .unwrap();
         assert!(res_checkout_feature_again.success);
 
         let snap_feature_again = session.get_snapshot().unwrap();
-        assert_eq!(session.current_branch.read().unwrap().clone(), "feature-edit");
+        assert_eq!(
+            session.current_branch.read().unwrap().clone(),
+            "feature-edit"
+        );
         assert_eq!(snap_feature_again.assets.len(), 2); // Both are restored!
         assert!(session.registry.resolve(&text_ref).is_ok());
 

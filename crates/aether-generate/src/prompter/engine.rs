@@ -38,7 +38,10 @@ pub fn merge_params_with_guide(
         }
     }
 
-    if let Some(obj) = explicit_options.get(&guide.provider).and_then(|v| v.as_object()) {
+    if let Some(obj) = explicit_options
+        .get(&guide.provider)
+        .and_then(|v| v.as_object())
+    {
         for (k, v) in obj {
             llm_params.insert(k.clone(), v.clone());
         }

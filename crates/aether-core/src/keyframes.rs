@@ -71,11 +71,15 @@ fn solve_cubic_bezier(x1: f32, y1: f32, x2: f32, y2: f32, t: f32) -> f32 {
 }
 
 fn sample_curve_x(x1: f32, x2: f32, tau: f32) -> f32 {
-    3.0 * (1.0 - tau) * (1.0 - tau) * tau * x1 + 3.0 * (1.0 - tau) * tau * tau * x2 + tau * tau * tau
+    3.0 * (1.0 - tau) * (1.0 - tau) * tau * x1
+        + 3.0 * (1.0 - tau) * tau * tau * x2
+        + tau * tau * tau
 }
 
 fn sample_curve_y(y1: f32, y2: f32, tau: f32) -> f32 {
-    3.0 * (1.0 - tau) * (1.0 - tau) * tau * y1 + 3.0 * (1.0 - tau) * tau * tau * y2 + tau * tau * tau
+    3.0 * (1.0 - tau) * (1.0 - tau) * tau * y1
+        + 3.0 * (1.0 - tau) * tau * tau * y2
+        + tau * tau * tau
 }
 
 fn sample_curve_derivative_x(x1: f32, x2: f32, tau: f32) -> f32 {
@@ -102,17 +106,27 @@ impl std::str::FromStr for EasingFunction {
             let trimmed = s
                 .replace("cubic_bezier", "")
                 .replace("cubic-bezier", "")
-                .replace('(', "")
-                .replace(')', "");
+                .replace(['(', ')'], "");
             let parts: Vec<&str> = trimmed.split(',').map(|p| p.trim()).collect();
             if parts.len() == 4 {
-                let x1 = parts[0].parse::<f32>().map_err(|e| crate::AetherError::InvalidCommand(e.to_string()))?;
-                let y1 = parts[1].parse::<f32>().map_err(|e| crate::AetherError::InvalidCommand(e.to_string()))?;
-                let x2 = parts[2].parse::<f32>().map_err(|e| crate::AetherError::InvalidCommand(e.to_string()))?;
-                let y2 = parts[3].parse::<f32>().map_err(|e| crate::AetherError::InvalidCommand(e.to_string()))?;
+                let x1 = parts[0]
+                    .parse::<f32>()
+                    .map_err(|e| crate::AetherError::InvalidCommand(e.to_string()))?;
+                let y1 = parts[1]
+                    .parse::<f32>()
+                    .map_err(|e| crate::AetherError::InvalidCommand(e.to_string()))?;
+                let x2 = parts[2]
+                    .parse::<f32>()
+                    .map_err(|e| crate::AetherError::InvalidCommand(e.to_string()))?;
+                let y2 = parts[3]
+                    .parse::<f32>()
+                    .map_err(|e| crate::AetherError::InvalidCommand(e.to_string()))?;
                 Ok(EasingFunction::CubicBezier { x1, y1, x2, y2 })
             } else {
-                Err(crate::AetherError::InvalidCommand(format!("Invalid cubic_bezier format: {}", s)))
+                Err(crate::AetherError::InvalidCommand(format!(
+                    "Invalid cubic_bezier format: {}",
+                    s
+                )))
             }
         } else {
             Ok(EasingFunction::Linear)
@@ -134,7 +148,9 @@ pub struct KeyframeTrack<T> {
 
 impl<T: Copy + PartialOrd> KeyframeTrack<T> {
     pub fn new() -> Self {
-        KeyframeTrack { keyframes: Vec::new() }
+        KeyframeTrack {
+            keyframes: Vec::new(),
+        }
     }
 
     pub fn insert_keyframe(&mut self, kf: Keyframe<T>) {
@@ -172,7 +188,7 @@ impl KeyframeTrack<f32> {
 
         let mut idx = 0;
         for i in 0..last_idx {
-            if time_ms >= self.keyframes[i].time_ms && time_ms <= self.keyframes[i+1].time_ms {
+            if time_ms >= self.keyframes[i].time_ms && time_ms <= self.keyframes[i + 1].time_ms {
                 idx = i;
                 break;
             }
@@ -209,7 +225,15 @@ mod tests {
         assert_eq!(ease_in, EasingFunction::EaseIn);
 
         let cb = EasingFunction::from_str("cubic-bezier(0.25, 0.1, 0.25, 1.0)").unwrap();
-        assert_eq!(cb, EasingFunction::CubicBezier { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1.0 });
+        assert_eq!(
+            cb,
+            EasingFunction::CubicBezier {
+                x1: 0.25,
+                y1: 0.1,
+                x2: 0.25,
+                y2: 1.0
+            }
+        );
     }
 
     #[test]
@@ -222,7 +246,12 @@ mod tests {
         let ease_in = EasingFunction::EaseIn;
         assert_eq!(ease_in.interpolate(0.5), 0.25);
 
-        let cubic = EasingFunction::CubicBezier { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1.0 };
+        let cubic = EasingFunction::CubicBezier {
+            x1: 0.25,
+            y1: 0.1,
+            x2: 0.25,
+            y2: 1.0,
+        };
         let mid = cubic.interpolate(0.5);
         assert!(mid > 0.0 && mid < 1.0);
     }

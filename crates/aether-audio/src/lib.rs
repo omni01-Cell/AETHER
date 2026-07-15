@@ -1,20 +1,22 @@
 pub mod dsp;
 
+use aether_core::{AetherError, Asset, AssetKind, Ref};
 use std::fs;
 use std::path::Path;
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
-use blake3;
-use aether_core::{AetherError, Ref, Asset, AssetKind};
 
 /// Extracts detailed technical metadata from an audio file using symphonia,
 /// falling back to a quick FFmpeg probe if duration is not available in the container headers.
 pub fn get_audio_metadata<P: AsRef<Path>>(path: P) -> Result<serde_json::Value, AetherError> {
     let p = path.as_ref();
     if !p.exists() {
-        return Err(AetherError::IoError(p.to_string_lossy().to_string(), "Audio file does not exist".to_string()));
+        return Err(AetherError::IoError(
+            p.to_string_lossy().to_string(),
+            "Audio file does not exist".to_string(),
+        ));
     }
 
     let file = fs::File::open(p)
@@ -30,9 +32,12 @@ pub fn get_audio_metadata<P: AsRef<Path>>(path: P) -> Result<serde_json::Value, 
     let mut channels = 2;
     let mut duration = 0.0f32;
 
-    if let Ok(probed) = symphonia::default::get_probe()
-        .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
-    {
+    if let Ok(probed) = symphonia::default::get_probe().format(
+        &hint,
+        mss,
+        &FormatOptions::default(),
+        &MetadataOptions::default(),
+    ) {
         let format = probed.format;
         if let Some(track) = format.tracks().first() {
             let params = &track.codec_params;
@@ -44,14 +49,16 @@ pub fn get_audio_metadata<P: AsRef<Path>>(path: P) -> Result<serde_json::Value, 
         }
     }
 
-
     // Fallback to FFmpeg probe if Symphonia was unable to extract a positive duration
     if duration <= 0.0 {
         let output = std::process::Command::new("ffprobe")
             .args([
-                "-v", "error",
-                "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
                 p.to_str().unwrap(),
             ])
             .output()
@@ -100,8 +107,9 @@ pub fn import_audio<P: AsRef<Path>>(
 
     // 3. Move/Copy to the cache directory
     if !cache_dir.exists() {
-        fs::create_dir_all(cache_dir)
-            .map_err(|e| AetherError::IoError(cache_dir.to_string_lossy().to_string(), e.to_string()))?;
+        fs::create_dir_all(cache_dir).map_err(|e| {
+            AetherError::IoError(cache_dir.to_string_lossy().to_string(), e.to_string())
+        })?;
     }
     let ext = src.extension().and_then(|e| e.to_str()).unwrap_or("wav");
     let cache_file_name = format!("{}.{}", hash, ext);
@@ -129,7 +137,11 @@ pub fn trim_audio(
     r: Ref,
     cache_dir: &Path,
 ) -> Result<Asset, AetherError> {
-    let ext = asset.path.extension().and_then(|e| e.to_str()).unwrap_or("wav");
+    let ext = asset
+        .path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("wav");
 
     // Calculate unique output hash based on command inputs
     let mut hasher = blake3::Hasher::new();
@@ -142,15 +154,21 @@ pub fn trim_audio(
     if !output_path.exists() {
         let status = std::process::Command::new("ffmpeg")
             .args([
-                "-ss", start,
-                "-to", end,
-                "-i", asset.path.to_str().unwrap(),
-                "-c:a", "pcm_s16le",
+                "-ss",
+                start,
+                "-to",
+                end,
+                "-i",
+                asset.path.to_str().unwrap(),
+                "-c:a",
+                "pcm_s16le",
                 "-y",
                 output_path.to_str().unwrap(),
             ])
             .status()
-            .map_err(|e| AetherError::MediaError(format!("Failed to run FFmpeg trim audio: {}", e)))?;
+            .map_err(|e| {
+                AetherError::MediaError(format!("Failed to run FFmpeg trim audio: {}", e))
+            })?;
 
         if !status.success() {
             return Err(AetherError::MediaError(format!(
@@ -179,7 +197,11 @@ pub fn normalize_audio(
     r: Ref,
     cache_dir: &Path,
 ) -> Result<Asset, AetherError> {
-    let ext = asset.path.extension().and_then(|e| e.to_str()).unwrap_or("wav");
+    let ext = asset
+        .path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("wav");
 
     // Calculate unique output hash based on command inputs
     let mut hasher = blake3::Hasher::new();
@@ -194,15 +216,21 @@ pub fn normalize_audio(
         let filter_str = format!("loudnorm=I={:.1}:TP={:.1}", lufs, true_peak);
         let status = std::process::Command::new("ffmpeg")
             .args([
-                "-i", asset.path.to_str().unwrap(),
-                "-filter:a", &filter_str,
-                "-ar", &sample_rate.to_string(),
-                "-c:a", "pcm_s16le",
+                "-i",
+                asset.path.to_str().unwrap(),
+                "-filter:a",
+                &filter_str,
+                "-ar",
+                &sample_rate.to_string(),
+                "-c:a",
+                "pcm_s16le",
                 "-y",
                 output_path.to_str().unwrap(),
             ])
             .status()
-            .map_err(|e| AetherError::MediaError(format!("Failed to run FFmpeg loudnorm audio: {}", e)))?;
+            .map_err(|e| {
+                AetherError::MediaError(format!("Failed to run FFmpeg loudnorm audio: {}", e))
+            })?;
 
         if !status.success() {
             return Err(AetherError::MediaError(format!(
@@ -211,7 +239,6 @@ pub fn normalize_audio(
             )));
         }
     }
-
 
     let metadata = get_audio_metadata(&output_path)?;
 
@@ -234,42 +261,59 @@ pub fn decode_audio_file<P: AsRef<Path>>(path: P) -> Result<(Vec<Vec<f32>>, u32)
     if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
         hint.with_extension(ext);
     }
-    
+
     let probed = symphonia::default::get_probe()
-        .format(&hint, mss, &symphonia::core::formats::FormatOptions::default(), &symphonia::core::meta::MetadataOptions::default())
+        .format(
+            &hint,
+            mss,
+            &symphonia::core::formats::FormatOptions::default(),
+            &symphonia::core::meta::MetadataOptions::default(),
+        )
         .map_err(|e| AetherError::MediaError(format!("Failed to probe audio: {}", e)))?;
-        
+
     let mut format = probed.format;
-    let track = format.tracks().first()
+    let track = format
+        .tracks()
+        .first()
         .ok_or_else(|| AetherError::MediaError("No audio tracks found".to_string()))?;
-        
+
     let codec_params = &track.codec_params;
     let sample_rate = codec_params.sample_rate.unwrap_or(44100);
     let channels = codec_params.channels.map(|c| c.count()).unwrap_or(2);
-    
+
     let mut decoder = symphonia::default::get_codecs()
-        .make(codec_params, &symphonia::core::codecs::DecoderOptions::default())
+        .make(
+            codec_params,
+            &symphonia::core::codecs::DecoderOptions::default(),
+        )
         .map_err(|e| AetherError::MediaError(format!("Failed to create decoder: {}", e)))?;
-        
+
     let track_id = track.id;
     let mut channel_samples = vec![Vec::new(); channels];
-    
+
     loop {
         let packet = match format.next_packet() {
             Ok(p) => p,
-            Err(symphonia::core::errors::Error::IoError(ref e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+            Err(symphonia::core::errors::Error::IoError(ref e))
+                if e.kind() == std::io::ErrorKind::UnexpectedEof =>
+            {
                 break;
             }
             Err(symphonia::core::errors::Error::ResetRequired) => {
                 continue;
             }
-            Err(e) => return Err(AetherError::MediaError(format!("Failed to read packet: {}", e))),
+            Err(e) => {
+                return Err(AetherError::MediaError(format!(
+                    "Failed to read packet: {}",
+                    e
+                )))
+            }
         };
-        
+
         if packet.track_id() != track_id {
             continue;
         }
-        
+
         let decoded = match decoder.decode(&packet) {
             Ok(d) => d,
             Err(symphonia::core::errors::Error::DecodeError(e)) => {
@@ -278,50 +322,61 @@ pub fn decode_audio_file<P: AsRef<Path>>(path: P) -> Result<(Vec<Vec<f32>>, u32)
             }
             Err(e) => return Err(AetherError::MediaError(format!("Decoder error: {}", e))),
         };
-        
-        let mut sample_buf = symphonia::core::audio::SampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec());
+
+        let mut sample_buf = symphonia::core::audio::SampleBuffer::<f32>::new(
+            decoded.capacity() as u64,
+            *decoded.spec(),
+        );
         sample_buf.copy_interleaved_ref(decoded);
         let samples = sample_buf.samples();
-        
+
         for (i, &sample) in samples.iter().enumerate() {
             let ch = i % channels;
             channel_samples[ch].push(sample);
         }
     }
-    
+
     Ok((channel_samples, sample_rate))
 }
 
 /// Encodes separate channel buffers of f32 samples into a standard 16-bit PCM WAV file using Hound.
-pub fn encode_audio_file(samples: &[Vec<f32>], sample_rate: u32, path: &Path) -> Result<(), AetherError> {
+pub fn encode_audio_file(
+    samples: &[Vec<f32>],
+    sample_rate: u32,
+    path: &Path,
+) -> Result<(), AetherError> {
     let channels = samples.len();
     if channels == 0 {
-        return Err(AetherError::MediaError("Cannot write audio with 0 channels".to_string()));
+        return Err(AetherError::MediaError(
+            "Cannot write audio with 0 channels".to_string(),
+        ));
     }
-    
+
     let spec = hound::WavSpec {
         channels: channels as u16,
-        sample_rate: sample_rate,
+        sample_rate,
         bits_per_sample: 16,
         sample_format: hound::SampleFormat::Int,
     };
-    
+
     let mut writer = hound::WavWriter::create(path, spec)
         .map_err(|e| AetherError::IoError(path.to_string_lossy().to_string(), e.to_string()))?;
-        
+
     let len = samples[0].len();
     for i in 0..len {
         for ch in 0..channels {
             let sample = samples[ch].get(i).copied().unwrap_or(0.0);
             let sample_i16 = (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
-            writer.write_sample(sample_i16)
-                .map_err(|e| AetherError::IoError(path.to_string_lossy().to_string(), e.to_string()))?;
+            writer.write_sample(sample_i16).map_err(|e| {
+                AetherError::IoError(path.to_string_lossy().to_string(), e.to_string())
+            })?;
         }
     }
-    
-    writer.finalize()
+
+    writer
+        .finalize()
         .map_err(|e| AetherError::IoError(path.to_string_lossy().to_string(), e.to_string()))?;
-        
+
     Ok(())
 }
 
@@ -335,8 +390,12 @@ pub fn apply_eq(
     r: Ref,
     cache_dir: &Path,
 ) -> Result<Asset, AetherError> {
-    let ext = asset.path.extension().and_then(|e| e.to_str()).unwrap_or("wav");
-    
+    let ext = asset
+        .path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("wav");
+
     let mut hasher = blake3::Hasher::new();
     hasher.update(asset.hash.as_bytes());
     hasher.update(filter_type.as_bytes());
@@ -345,20 +404,21 @@ pub fn apply_eq(
     hasher.update(format!("{:.1}", q).as_bytes());
     let new_hash = hasher.finalize().to_hex().to_string();
     let output_path = cache_dir.join(format!("{}.{}", new_hash, ext));
-    
+
     if !output_path.exists() {
         let (mut samples, sample_rate) = decode_audio_file(&asset.path)?;
         let channels = samples.len();
-        
-        let mut filter = dsp::BiquadFilter::new(filter_type, freq_hz, gain_db, q, sample_rate, channels)
-            .map_err(|e| AetherError::MediaError(e))?;
+
+        let mut filter =
+            dsp::BiquadFilter::new(filter_type, freq_hz, gain_db, q, sample_rate, channels)
+                .map_err(AetherError::MediaError)?;
         filter.process(&mut samples);
-        
+
         encode_audio_file(&samples, sample_rate, &output_path)?;
     }
-    
+
     let metadata = get_audio_metadata(&output_path)?;
-    
+
     Ok(Asset {
         r,
         kind: AssetKind::Audio,
@@ -387,8 +447,12 @@ pub fn apply_compressor(
     r: Ref,
     cache_dir: &Path,
 ) -> Result<Asset, AetherError> {
-    let ext = asset.path.extension().and_then(|e| e.to_str()).unwrap_or("wav");
-    
+    let ext = asset
+        .path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("wav");
+
     let mut hasher = blake3::Hasher::new();
     hasher.update(asset.hash.as_bytes());
     hasher.update(format!("{:.1}", threshold_db).as_bytes());
@@ -397,19 +461,26 @@ pub fn apply_compressor(
     hasher.update(format!("{:.1}", release_ms).as_bytes());
     let new_hash = hasher.finalize().to_hex().to_string();
     let output_path = cache_dir.join(format!("{}.{}", new_hash, ext));
-    
+
     if !output_path.exists() {
         let (mut samples, sample_rate) = decode_audio_file(&asset.path)?;
         let channels = samples.len();
-        
-        let mut compressor = dsp::DynamicCompressor::new(threshold_db, ratio, attack_ms, release_ms, sample_rate, channels);
+
+        let mut compressor = dsp::DynamicCompressor::new(
+            threshold_db,
+            ratio,
+            attack_ms,
+            release_ms,
+            sample_rate,
+            channels,
+        );
         compressor.process(&mut samples);
-        
+
         encode_audio_file(&samples, sample_rate, &output_path)?;
     }
-    
+
     let metadata = get_audio_metadata(&output_path)?;
-    
+
     Ok(Asset {
         r,
         kind: AssetKind::Audio,
@@ -446,23 +517,23 @@ pub fn mix_tracks(
     }
     let new_hash = hasher.finalize().to_hex().to_string();
     let output_path = cache_dir.join(format!("{}.wav", new_hash));
-    
+
     if !output_path.exists() {
         let mut tracks = Vec::new();
         let mut sample_rates = Vec::new();
-        
+
         for asset in assets {
             let (samples, sr) = decode_audio_file(&asset.path)?;
             tracks.push(samples);
             sample_rates.push(sr);
         }
-        
+
         let mixed = dsp::MultiTrackMixer::mix(&tracks, &sample_rates, volumes, pans, 44100)
-            .map_err(|e| AetherError::MediaError(e))?;
-            
+            .map_err(AetherError::MediaError)?;
+
         encode_audio_file(&mixed, 44100, &output_path)?;
     }
-    
+
     let metadata = get_audio_metadata(&output_path)?;
     let mut inputs = Vec::new();
     for (i, asset) in assets.iter().enumerate() {
@@ -474,7 +545,7 @@ pub fn mix_tracks(
             "pan": pan,
         }));
     }
-    
+
     Ok(Asset {
         r,
         kind: AssetKind::Audio,
@@ -494,10 +565,13 @@ mod tests {
     use std::path::PathBuf;
 
     fn temp_test_dir() -> PathBuf {
-        let unique_dir = format!("test_audio_{}", std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos());
+        let unique_dir = format!(
+            "test_audio_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
         std::env::temp_dir().join(unique_dir)
     }
 
@@ -507,9 +581,12 @@ mod tests {
         }
         let status = std::process::Command::new("ffmpeg")
             .args([
-                "-f", "lavfi",
-                "-i", "sine=duration=2:frequency=1000",
-                "-c:a", "pcm_s16le",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=duration=2:frequency=1000",
+                "-c:a",
+                "pcm_s16le",
                 "-y",
                 output_path.to_str().unwrap(),
             ])
@@ -538,7 +615,10 @@ mod tests {
         generate_synthetic_wav(&audio_path);
 
         let cache_dir = dir.join("cache");
-        let r1 = Ref { kind: RefKind::Audio, id: 1 };
+        let r1 = Ref {
+            kind: RefKind::Audio,
+            id: 1,
+        };
         let asset1 = import_audio(&audio_path, r1, &cache_dir).unwrap();
 
         assert_eq!(asset1.r, r1);
@@ -547,7 +627,10 @@ mod tests {
         assert_eq!(asset1.metadata["sample_rate"].as_u64().unwrap(), 44100);
 
         // Trim from 0.5s to 1.5s
-        let r2 = Ref { kind: RefKind::Audio, id: 2 };
+        let r2 = Ref {
+            kind: RefKind::Audio,
+            id: 2,
+        };
         let asset2 = trim_audio(&asset1, "0.5", "1.5", r2, &cache_dir).unwrap();
 
         assert_eq!(asset2.r, r2);
@@ -564,11 +647,17 @@ mod tests {
         generate_synthetic_wav(&audio_path);
 
         let cache_dir = dir.join("cache");
-        let r1 = Ref { kind: RefKind::Audio, id: 1 };
+        let r1 = Ref {
+            kind: RefKind::Audio,
+            id: 1,
+        };
         let asset1 = import_audio(&audio_path, r1, &cache_dir).unwrap();
 
         // Normalize to -14 LUFS, -1.0 True Peak
-        let r2 = Ref { kind: RefKind::Audio, id: 2 };
+        let r2 = Ref {
+            kind: RefKind::Audio,
+            id: 2,
+        };
         let asset2 = normalize_audio(&asset1, -14.0, -1.0, r2, &cache_dir).unwrap();
 
         assert_eq!(asset2.r, r2);
@@ -587,10 +676,11 @@ mod tests {
             let t = i as f32 / sample_rate as f32;
             samples[0][i] = (2.0 * std::f32::consts::PI * freq * t).sin();
         }
-        
-        let mut filter = dsp::BiquadFilter::new("HighPass", 2000.0, 0.0, 0.707, sample_rate, 1).unwrap();
+
+        let mut filter =
+            dsp::BiquadFilter::new("HighPass", 2000.0, 0.0, 0.707, sample_rate, 1).unwrap();
         filter.process(&mut samples);
-        
+
         let mut max_val = 0.0f32;
         for i in 2000..44100 {
             let val = samples[0][i].abs();
@@ -598,21 +688,29 @@ mod tests {
                 max_val = val;
             }
         }
-        
-        assert!(max_val > 0.22 && max_val < 0.28, "Expected attenuation ~12dB (amplitude ~0.25), got: {}", max_val);
+
+        assert!(
+            max_val > 0.22 && max_val < 0.28,
+            "Expected attenuation ~12dB (amplitude ~0.25), got: {}",
+            max_val
+        );
     }
 
     #[test]
     fn test_compressor_gain_reduction() {
         let sample_rate = 44100;
         let mut samples = vec![vec![2.0; 44100]];
-        
+
         let mut compressor = dsp::DynamicCompressor::new(-6.0, 4.0, 1.0, 100.0, sample_rate, 1);
         compressor.process(&mut samples);
-        
+
         let stabilized_val = samples[0][40000];
-        
-        assert!(stabilized_val > 0.65 && stabilized_val < 0.75, "Expected compressed level ~0.707, got: {}", stabilized_val);
+
+        assert!(
+            stabilized_val > 0.65 && stabilized_val < 0.75,
+            "Expected compressed level ~0.707, got: {}",
+            stabilized_val
+        );
     }
 
     #[test]
@@ -623,13 +721,14 @@ mod tests {
         let sample_rates = vec![44100, 44100];
         let volumes = vec![1.0, 1.0];
         let pans = vec![-1.0, 1.0];
-        
-        let mixed = dsp::MultiTrackMixer::mix(&tracks, &sample_rates, &volumes, &pans, 44100).unwrap();
-        
+
+        let mixed =
+            dsp::MultiTrackMixer::mix(&tracks, &sample_rates, &volumes, &pans, 44100).unwrap();
+
         assert_eq!(mixed.len(), 2);
         assert_eq!(mixed[0].len(), 1000);
         assert_eq!(mixed[1].len(), 1000);
-        
+
         assert!((mixed[0][0] - 1.0).abs() < 1e-4);
         assert!((mixed[1][0] - 2.0).abs() < 1e-4);
     }

@@ -1,4 +1,6 @@
-use aether_core::{AetherError, GenerationArtifact, GenerationJob, GenerationRequest, ProviderModel};
+use aether_core::{
+    AetherError, GenerationArtifact, GenerationJob, GenerationRequest, ProviderModel,
+};
 
 use crate::bridge::BridgeGenerationProvider;
 use crate::mock::MockProvider;

@@ -1,13 +1,16 @@
-use std::fs;
-use std::path::PathBuf;
 use aether_core::Command;
 use aether_daemon::SessionManager;
+use std::fs;
+use std::path::PathBuf;
 
 fn temp_project_dir() -> PathBuf {
-    let unique_dir = format!("test_e2e_project_{}", std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos());
+    let unique_dir = format!(
+        "test_e2e_project_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
     std::env::temp_dir().join(unique_dir)
 }
 
@@ -68,8 +71,18 @@ fn test_e2e_full_scenario_and_crash_resilience() {
         assert_eq!(snap_undo.history_cursor, 2);
 
         // Verify that the drawn text asset is no longer resolved in active registry
-        assert!(session.get_snapshot().unwrap().assets.iter().any(|a| a.r == canvas_ref));
-        assert!(!session.get_snapshot().unwrap().assets.iter().any(|a| a.r == text_ref));
+        assert!(session
+            .get_snapshot()
+            .unwrap()
+            .assets
+            .iter()
+            .any(|a| a.r == canvas_ref));
+        assert!(!session
+            .get_snapshot()
+            .unwrap()
+            .assets
+            .iter()
+            .any(|a| a.r == text_ref));
 
         // Redo DrawText command
         let res_redo = session.execute(Command::Redo).unwrap();

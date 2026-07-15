@@ -271,9 +271,7 @@ fn build_user_message(user_request: &str, context: &PromptMakerContext) -> Strin
             }
         }
     }
-    if !context.explicit_options.is_null()
-        && context.explicit_options != json!({})
-    {
+    if !context.explicit_options.is_null() && context.explicit_options != json!({}) {
         parts.push(format!(
             "Options explicites (prioritaires): {}",
             context.explicit_options

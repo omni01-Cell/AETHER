@@ -56,7 +56,9 @@ impl RoutingConfig {
 
     pub fn function_for_kind(&self, kind: GenerationKind) -> Option<&RouteEntry> {
         let kind_str = format!("{:?}", kind);
-        self.routes.iter().find(|r| r.kinds.iter().any(|k| k == &kind_str))
+        self.routes
+            .iter()
+            .find(|r| r.kinds.iter().any(|k| k == &kind_str))
     }
 
     fn resolve_routed(
