@@ -1,0 +1,3 @@
+## 2024-05-24 - Audio DSP loops Iterator optimization
+**Learning:** Audio DSP hot loops were using indexed `for i in 0..len` iterators over `samples[ch][i]` which incur bounds checks in Rust. Using iterators with `samples.iter_mut().enumerate()` or nested iterator constructs can eliminate these bounds checks safely inside standard library optimized blocks.
+**Action:** Always prefer iterators (`.iter()`, `.iter_mut()`, `.take()`, `.skip()`, etc.) over manual range indexing (especially `0..len`) when processing audio samples to avoid the overhead of bounds checking on every single iteration in hot paths.
