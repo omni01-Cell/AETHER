@@ -6,7 +6,6 @@ use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
-use blake3;
 use aether_core::{AetherError, Ref, Asset, AssetKind};
 
 /// Extracts detailed technical metadata from an audio file using symphonia,
@@ -301,7 +300,7 @@ pub fn encode_audio_file(samples: &[Vec<f32>], sample_rate: u32, path: &Path) ->
     
     let spec = hound::WavSpec {
         channels: channels as u16,
-        sample_rate: sample_rate,
+        sample_rate,
         bits_per_sample: 16,
         sample_format: hound::SampleFormat::Int,
     };
@@ -311,8 +310,8 @@ pub fn encode_audio_file(samples: &[Vec<f32>], sample_rate: u32, path: &Path) ->
         
     let len = samples[0].len();
     for i in 0..len {
-        for ch in 0..channels {
-            let sample = samples[ch].get(i).copied().unwrap_or(0.0);
+        for sample_channel in samples.iter().take(channels) {
+            let sample = sample_channel.get(i).copied().unwrap_or(0.0);
             let sample_i16 = (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
             writer.write_sample(sample_i16)
                 .map_err(|e| AetherError::IoError(path.to_string_lossy().to_string(), e.to_string()))?;
@@ -351,7 +350,7 @@ pub fn apply_eq(
         let channels = samples.len();
         
         let mut filter = dsp::BiquadFilter::new(filter_type, freq_hz, gain_db, q, sample_rate, channels)
-            .map_err(|e| AetherError::MediaError(e))?;
+            .map_err(AetherError::MediaError)?;
         filter.process(&mut samples);
         
         encode_audio_file(&samples, sample_rate, &output_path)?;
@@ -458,7 +457,7 @@ pub fn mix_tracks(
         }
         
         let mixed = dsp::MultiTrackMixer::mix(&tracks, &sample_rates, volumes, pans, 44100)
-            .map_err(|e| AetherError::MediaError(e))?;
+            .map_err(AetherError::MediaError)?;
             
         encode_audio_file(&mixed, 44100, &output_path)?;
     }
