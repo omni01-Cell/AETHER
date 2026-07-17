@@ -102,8 +102,9 @@ impl std::str::FromStr for EasingFunction {
             let trimmed = s
                 .replace("cubic_bezier", "")
                 .replace("cubic-bezier", "")
-                .replace('(', "")
-                .replace(')', "");
+                // PERFORMANCE: Collapsed consecutive string replacement into a single call
+                // to avoid unnecessary intermediate String allocation (clippy::collapsible_str_replace).
+                .replace(['(', ')'], "");
             let parts: Vec<&str> = trimmed.split(',').map(|p| p.trim()).collect();
             if parts.len() == 4 {
                 let x1 = parts[0].parse::<f32>().map_err(|e| crate::AetherError::InvalidCommand(e.to_string()))?;
