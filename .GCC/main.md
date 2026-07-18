@@ -10,6 +10,7 @@
 Plan et implémentation SOTA des fonctionnalités manquantes d'AETHER identifiées dans `fonctionnalites_manquantes_aether.md` : moteur de layout fluide (taffy), expression engine (evalexpr), automatisation sémantique audio/vidéo (detect-cuts, strip-silence), design tokens, colorimétrie avancée, bus audio, et enrichissement du compositing.
 
 ## Decisions made
+- [2024-07-18] Optimized `apply_box_blur` with O(n) sliding window approach, cutting filtering time significantly without breaking API compatibility.
 - [2025-06-02] Architecture: system.md + model JSON files for prompt injection (not external files at runtime)
 - [2025-06-02] Bridge pattern: TypeScript bridge handles API calls, Rust handles orchestration
 - [2025-06-02] Video providers: Kling 3.0 (Kuaishou) as primary for VideoText/VideoFrame, Seedance 2.0 (ByteDance) for VideoIngredients/VideoEdit
@@ -25,6 +26,7 @@ Plan et implémentation SOTA des fonctionnalités manquantes d'AETHER identifié
 - [2026-06-06] Effectué la recherche SOTA /deep-research et rédigé le plan d'implémentation des manquants de Premiere Pro.
 
 ## 🌿 Active Branches / Plans
+- `box_blur_optimization` : Optimize the CPU-based box blur implementation.
 - `plan_add_git_folders` : Suivi des dossiers .agent et .GCC dans Git ([plan_add_git_folders.md](file:///home/omni/Code/AETHER/.GCC/branches/plan_add_git_folders.md))
 
 
