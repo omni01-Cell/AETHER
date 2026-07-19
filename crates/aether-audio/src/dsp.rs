@@ -85,13 +85,15 @@ impl DynamicCompressor {
         let att_coef = (-1.0 / (self.sample_rate * self.attack_s)).exp();
         let rel_coef = (-1.0 / (self.sample_rate * self.release_s)).exp();
         
-        for ch in 0..channels {
+        // Bolt: Optimized dynamic compressor processing by replacing indexed loops with iterators.
+        // Impact: Eliminates bounds checking overhead on every iteration, potentially improving performance significantly for large audio chunks.
+        for (ch, channel_samples) in samples.iter_mut().enumerate().take(channels) {
             if ch >= self.envelope.len() {
                 self.envelope.push(0.0);
             }
             let env = &mut self.envelope[ch];
             
-            for sample in &mut samples[ch] {
+            for sample in channel_samples {
                 let input_mag = sample.abs();
                 
                 if input_mag > *env {
@@ -198,8 +200,10 @@ impl MultiTrackMixer {
         
         let mut output = vec![vec![0.0; output_len]; channels];
         
+        // Bolt: Optimized track resampling processing by replacing inner loop indexing with iterator.
+        // Impact: Eliminates bounds checking overhead on the `output_sample` assignment.
         for ch in 0..channels {
-            for i in 0..output_len {
+            for (i, output_sample) in output[ch].iter_mut().enumerate().take(output_len) {
                 let src_idx = i as f64 / ratio;
                 let low = src_idx.floor() as usize;
                 let high = src_idx.ceil() as usize;
@@ -208,9 +212,9 @@ impl MultiTrackMixer {
                 if low < input_len && high < input_len {
                     let sample_low = track[ch][low];
                     let sample_high = track[ch][high];
-                    output[ch][i] = sample_low + (sample_high - sample_low) * frac as f32;
+                    *output_sample = sample_low + (sample_high - sample_low) * frac as f32;
                 } else if low < input_len {
-                    output[ch][i] = track[ch][low];
+                    *output_sample = track[ch][low];
                 }
             }
         }
