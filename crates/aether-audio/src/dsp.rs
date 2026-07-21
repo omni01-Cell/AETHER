@@ -40,11 +40,14 @@ impl BiquadFilter {
     }
     
     pub fn process(&mut self, samples: &mut [Vec<f32>]) {
-        let channels = samples.len();
-        for ch in 0..channels {
+        // OPTIMIZATION: Replacing index-based iteration (e.g., `samples[ch]`)
+        // with `iter_mut().enumerate()` over the channels slice.
+        // Impact: Eliminates runtime bounds checking for every channel iteration,
+        // which can marginally improve throughput for multi-channel processing paths.
+        for (ch, channel_samples) in samples.iter_mut().enumerate() {
             if ch < self.filters.len() {
                 let filter = &mut self.filters[ch];
-                for sample in &mut samples[ch] {
+                for sample in channel_samples.iter_mut() {
                     *sample = filter.run(*sample);
                 }
             }
@@ -81,17 +84,20 @@ impl DynamicCompressor {
     }
     
     pub fn process(&mut self, samples: &mut [Vec<f32>]) {
-        let channels = samples.len();
         let att_coef = (-1.0 / (self.sample_rate * self.attack_s)).exp();
         let rel_coef = (-1.0 / (self.sample_rate * self.release_s)).exp();
         
-        for ch in 0..channels {
+        // OPTIMIZATION: Using `iter_mut().enumerate()` over `samples` slice instead of
+        // indexing (`samples[ch]`).
+        // Impact: Eliminates runtime bounds checking for every channel iteration,
+        // which can marginally improve throughput for multi-channel processing paths.
+        for (ch, channel_samples) in samples.iter_mut().enumerate() {
             if ch >= self.envelope.len() {
                 self.envelope.push(0.0);
             }
             let env = &mut self.envelope[ch];
             
-            for sample in &mut samples[ch] {
+            for sample in channel_samples.iter_mut() {
                 let input_mag = sample.abs();
                 
                 if input_mag > *env {
