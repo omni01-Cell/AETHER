@@ -40,13 +40,9 @@ impl BiquadFilter {
     }
     
     pub fn process(&mut self, samples: &mut [Vec<f32>]) {
-        let channels = samples.len();
-        for ch in 0..channels {
-            if ch < self.filters.len() {
-                let filter = &mut self.filters[ch];
-                for sample in &mut samples[ch] {
-                    *sample = filter.run(*sample);
-                }
+        for (sample_channel, filter) in samples.iter_mut().zip(self.filters.iter_mut()) {
+            for sample in sample_channel.iter_mut() {
+                *sample = filter.run(*sample);
             }
         }
     }
@@ -81,17 +77,16 @@ impl DynamicCompressor {
     }
     
     pub fn process(&mut self, samples: &mut [Vec<f32>]) {
-        let channels = samples.len();
         let att_coef = (-1.0 / (self.sample_rate * self.attack_s)).exp();
         let rel_coef = (-1.0 / (self.sample_rate * self.release_s)).exp();
         
-        for ch in 0..channels {
-            if ch >= self.envelope.len() {
-                self.envelope.push(0.0);
-            }
-            let env = &mut self.envelope[ch];
-            
-            for sample in &mut samples[ch] {
+        // Ensure envelope vector is large enough
+        if self.envelope.len() < samples.len() {
+            self.envelope.resize(samples.len(), 0.0);
+        }
+
+        for (sample_channel, env) in samples.iter_mut().zip(self.envelope.iter_mut()) {
+            for sample in sample_channel.iter_mut() {
                 let input_mag = sample.abs();
                 
                 if input_mag > *env {
@@ -198,19 +193,19 @@ impl MultiTrackMixer {
         
         let mut output = vec![vec![0.0; output_len]; channels];
         
-        for ch in 0..channels {
-            for i in 0..output_len {
+        for (out_channel, in_channel) in output.iter_mut().zip(track.iter()) {
+            for (i, out_sample) in out_channel.iter_mut().enumerate() {
                 let src_idx = i as f64 / ratio;
                 let low = src_idx.floor() as usize;
                 let high = src_idx.ceil() as usize;
                 let frac = src_idx - low as f64;
                 
                 if low < input_len && high < input_len {
-                    let sample_low = track[ch][low];
-                    let sample_high = track[ch][high];
-                    output[ch][i] = sample_low + (sample_high - sample_low) * frac as f32;
+                    let sample_low = in_channel[low];
+                    let sample_high = in_channel[high];
+                    *out_sample = sample_low + (sample_high - sample_low) * frac as f32;
                 } else if low < input_len {
-                    output[ch][i] = track[ch][low];
+                    *out_sample = in_channel[low];
                 }
             }
         }
