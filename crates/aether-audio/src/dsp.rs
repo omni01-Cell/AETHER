@@ -158,24 +158,26 @@ impl MultiTrackMixer {
             let pan = pans.get(i).copied().unwrap_or(0.0).clamp(-1.0, 1.0);
             
             let angle = (pan + 1.0) * std::f32::consts::FRAC_PI_4;
-            let left_pan = angle.cos();
-            let right_pan = angle.sin();
+            let left_vol = angle.cos() * vol;
+            let right_vol = angle.sin() * vol;
             
             let track_ch = track.len();
             let len = track[0].len();
             
-            for sample_idx in 0..len {
-                let (l_sample, r_sample) = if track_ch == 1 {
-                    let s = track[0][sample_idx];
-                    (s, s)
-                } else {
-                    let l = track[0][sample_idx];
-                    let r = track[1][sample_idx];
-                    (l, r)
-                };
-                
-                mixed[0][sample_idx] += l_sample * vol * left_pan;
-                mixed[1][sample_idx] += r_sample * vol * right_pan;
+            let (left_mixed, right_mixed) = mixed.split_at_mut(1);
+            let mix_l = &mut left_mixed[0][..len];
+            let mix_r = &mut right_mixed[0][..len];
+
+            if track_ch == 1 {
+                for ((out_l, out_r), &s) in mix_l.iter_mut().zip(mix_r.iter_mut()).zip(track[0].iter()) {
+                    *out_l += s * left_vol;
+                    *out_r += s * right_vol;
+                }
+            } else {
+                for (((out_l, out_r), &s_l), &s_r) in mix_l.iter_mut().zip(mix_r.iter_mut()).zip(track[0].iter()).zip(track[1].iter()) {
+                    *out_l += s_l * left_vol;
+                    *out_r += s_r * right_vol;
+                }
             }
         }
         
@@ -199,18 +201,19 @@ impl MultiTrackMixer {
         let mut output = vec![vec![0.0; output_len]; channels];
         
         for ch in 0..channels {
-            for i in 0..output_len {
+            let src_track = &track[ch];
+            for (i, out_sample) in output[ch].iter_mut().enumerate() {
                 let src_idx = i as f64 / ratio;
-                let low = src_idx.floor() as usize;
-                let high = src_idx.ceil() as usize;
+                let low = src_idx as usize;
+                let high = low + 1;
                 let frac = src_idx - low as f64;
                 
-                if low < input_len && high < input_len {
-                    let sample_low = track[ch][low];
-                    let sample_high = track[ch][high];
-                    output[ch][i] = sample_low + (sample_high - sample_low) * frac as f32;
+                if high < input_len {
+                    let sample_low = src_track[low];
+                    let sample_high = src_track[high];
+                    *out_sample = sample_low + (sample_high - sample_low) * frac as f32;
                 } else if low < input_len {
-                    output[ch][i] = track[ch][low];
+                    *out_sample = src_track[low];
                 }
             }
         }
