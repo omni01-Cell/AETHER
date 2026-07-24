@@ -41,3 +41,4 @@ Attendre l'approbation de l'utilisateur sur le plan d'implémentation avant de c
 
 ## Abandoned branches
 - None
+- `plan_audio_dsp_optimization` : Optimize DSP array loops by switching to chained Iterators to avoid explicit bound checks bounds.
