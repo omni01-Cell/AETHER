@@ -198,19 +198,19 @@ impl MultiTrackMixer {
         
         let mut output = vec![vec![0.0; output_len]; channels];
         
-        for ch in 0..channels {
-            for i in 0..output_len {
+        for (out_ch, in_ch) in output.iter_mut().zip(track.iter()) {
+            for (i, out_sample) in out_ch.iter_mut().enumerate() {
                 let src_idx = i as f64 / ratio;
                 let low = src_idx.floor() as usize;
                 let high = src_idx.ceil() as usize;
                 let frac = src_idx - low as f64;
                 
-                if low < input_len && high < input_len {
-                    let sample_low = track[ch][low];
-                    let sample_high = track[ch][high];
-                    output[ch][i] = sample_low + (sample_high - sample_low) * frac as f32;
+                if high < input_len {
+                    let sample_low = in_ch[low];
+                    let sample_high = in_ch[high];
+                    *out_sample = sample_low + (sample_high - sample_low) * frac as f32;
                 } else if low < input_len {
-                    output[ch][i] = track[ch][low];
+                    *out_sample = in_ch[low];
                 }
             }
         }

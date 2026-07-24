@@ -1,0 +1,3 @@
+## 2024-07-24 - Rust DSP Iterators Avoid Bounds Checks
+**Learning:** In highly performance-sensitive audio DSP code within `aether-audio/src/dsp.rs`, relying on array indexing (`vec[ch][i]`) inside hot loops forces bounds checking. Rust iterators over mutable slices (`iter_mut().zip()`) completely elide bounds checks for this pattern while increasing memory safety, enabling a measurable speedup during array resampling.
+**Action:** Default to using chained Rust iterators (e.g. `zip`, `enumerate`) instead of explicit `for ch in 0..channels` or index variables when iterating over vectors and matrices in core DSP pathways.
