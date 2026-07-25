@@ -40,13 +40,9 @@ impl BiquadFilter {
     }
     
     pub fn process(&mut self, samples: &mut [Vec<f32>]) {
-        let channels = samples.len();
-        for ch in 0..channels {
-            if ch < self.filters.len() {
-                let filter = &mut self.filters[ch];
-                for sample in &mut samples[ch] {
-                    *sample = filter.run(*sample);
-                }
+        for (sample_ch, filter) in samples.iter_mut().zip(self.filters.iter_mut()) {
+            for sample in sample_ch.iter_mut() {
+                *sample = filter.run(*sample);
             }
         }
     }
@@ -85,13 +81,12 @@ impl DynamicCompressor {
         let att_coef = (-1.0 / (self.sample_rate * self.attack_s)).exp();
         let rel_coef = (-1.0 / (self.sample_rate * self.release_s)).exp();
         
-        for ch in 0..channels {
-            if ch >= self.envelope.len() {
-                self.envelope.push(0.0);
-            }
-            let env = &mut self.envelope[ch];
-            
-            for sample in &mut samples[ch] {
+        if self.envelope.len() < channels {
+            self.envelope.resize(channels, 0.0);
+        }
+
+        for (sample_ch, env) in samples.iter_mut().zip(self.envelope.iter_mut()) {
+            for sample in sample_ch.iter_mut() {
                 let input_mag = sample.abs();
                 
                 if input_mag > *env {
@@ -162,20 +157,23 @@ impl MultiTrackMixer {
             let right_pan = angle.sin();
             
             let track_ch = track.len();
-            let len = track[0].len();
             
-            for sample_idx in 0..len {
-                let (l_sample, r_sample) = if track_ch == 1 {
-                    let s = track[0][sample_idx];
-                    (s, s)
-                } else {
-                    let l = track[0][sample_idx];
-                    let r = track[1][sample_idx];
-                    (l, r)
-                };
-                
-                mixed[0][sample_idx] += l_sample * vol * left_pan;
-                mixed[1][sample_idx] += r_sample * vol * right_pan;
+            let (mixed_l, mixed_r) = if let [l, r, ..] = &mut mixed[..] {
+                (l, r)
+            } else {
+                unreachable!()
+            };
+
+            if track_ch == 1 {
+                for ((l_mix, r_mix), &s) in mixed_l.iter_mut().zip(mixed_r.iter_mut()).zip(&track[0]) {
+                    *l_mix += s * vol * left_pan;
+                    *r_mix += s * vol * right_pan;
+                }
+            } else if track_ch >= 2 {
+                for ((l_mix, r_mix), (&l, &r)) in mixed_l.iter_mut().zip(mixed_r.iter_mut()).zip(track[0].iter().zip(&track[1])) {
+                    *l_mix += l * vol * left_pan;
+                    *r_mix += r * vol * right_pan;
+                }
             }
         }
         
@@ -198,19 +196,19 @@ impl MultiTrackMixer {
         
         let mut output = vec![vec![0.0; output_len]; channels];
         
-        for ch in 0..channels {
-            for i in 0..output_len {
+        for (out_ch, in_ch) in output.iter_mut().zip(track.iter()) {
+            for (i, out_sample) in out_ch.iter_mut().enumerate() {
                 let src_idx = i as f64 / ratio;
                 let low = src_idx.floor() as usize;
                 let high = src_idx.ceil() as usize;
                 let frac = src_idx - low as f64;
                 
                 if low < input_len && high < input_len {
-                    let sample_low = track[ch][low];
-                    let sample_high = track[ch][high];
-                    output[ch][i] = sample_low + (sample_high - sample_low) * frac as f32;
+                    let sample_low = in_ch[low];
+                    let sample_high = in_ch[high];
+                    *out_sample = sample_low + (sample_high - sample_low) * frac as f32;
                 } else if low < input_len {
-                    output[ch][i] = track[ch][low];
+                    *out_sample = in_ch[low];
                 }
             }
         }
