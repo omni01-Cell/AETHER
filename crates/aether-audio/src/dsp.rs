@@ -40,13 +40,9 @@ impl BiquadFilter {
     }
     
     pub fn process(&mut self, samples: &mut [Vec<f32>]) {
-        let channels = samples.len();
-        for ch in 0..channels {
-            if ch < self.filters.len() {
-                let filter = &mut self.filters[ch];
-                for sample in &mut samples[ch] {
-                    *sample = filter.run(*sample);
-                }
+        for (sample_ch, filter) in samples.iter_mut().zip(self.filters.iter_mut()) {
+            for sample in sample_ch {
+                *sample = filter.run(*sample);
             }
         }
     }
@@ -81,17 +77,12 @@ impl DynamicCompressor {
     }
     
     pub fn process(&mut self, samples: &mut [Vec<f32>]) {
-        let channels = samples.len();
         let att_coef = (-1.0 / (self.sample_rate * self.attack_s)).exp();
         let rel_coef = (-1.0 / (self.sample_rate * self.release_s)).exp();
         
-        for ch in 0..channels {
-            if ch >= self.envelope.len() {
-                self.envelope.push(0.0);
-            }
-            let env = &mut self.envelope[ch];
-            
-            for sample in &mut samples[ch] {
+        self.envelope.resize(samples.len(), 0.0);
+        for (sample_ch, env) in samples.iter_mut().zip(self.envelope.iter_mut()) {
+            for sample in sample_ch {
                 let input_mag = sample.abs();
                 
                 if input_mag > *env {
