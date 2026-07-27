@@ -41,3 +41,6 @@ Attendre l'approbation de l'utilisateur sur le plan d'implémentation avant de c
 
 ## Abandoned branches
 - None
+## 🌿 Active Branches / Plans
+- plan_bolt_dsp_optimization
+Refactored DSP loops to use iterators, improving performance.
