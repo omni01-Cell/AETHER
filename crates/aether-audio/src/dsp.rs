@@ -40,13 +40,11 @@ impl BiquadFilter {
     }
     
     pub fn process(&mut self, samples: &mut [Vec<f32>]) {
-        let channels = samples.len();
-        for ch in 0..channels {
-            if ch < self.filters.len() {
-                let filter = &mut self.filters[ch];
-                for sample in &mut samples[ch] {
-                    *sample = filter.run(*sample);
-                }
+        // Bolt: Optimizied DSP loop by replacing vector indexing with iterators (iter_mut, zip)
+        // to eliminate runtime bounds checking overhead, significantly improving processing performance.
+        for (filter, channel_samples) in self.filters.iter_mut().zip(samples.iter_mut()) {
+            for sample in channel_samples.iter_mut() {
+                *sample = filter.run(*sample);
             }
         }
     }
@@ -85,13 +83,14 @@ impl DynamicCompressor {
         let att_coef = (-1.0 / (self.sample_rate * self.attack_s)).exp();
         let rel_coef = (-1.0 / (self.sample_rate * self.release_s)).exp();
         
-        for ch in 0..channels {
-            if ch >= self.envelope.len() {
-                self.envelope.push(0.0);
-            }
-            let env = &mut self.envelope[ch];
-            
-            for sample in &mut samples[ch] {
+        if self.envelope.len() < channels {
+            self.envelope.resize(channels, 0.0);
+        }
+
+        // Bolt: Optimizied DSP loop by replacing vector indexing with iterators (iter_mut, zip)
+        // to eliminate runtime bounds checking overhead, significantly improving processing performance.
+        for (env, channel_samples) in self.envelope.iter_mut().zip(samples.iter_mut()) {
+            for sample in channel_samples.iter_mut() {
                 let input_mag = sample.abs();
                 
                 if input_mag > *env {
@@ -198,8 +197,10 @@ impl MultiTrackMixer {
         
         let mut output = vec![vec![0.0; output_len]; channels];
         
-        for ch in 0..channels {
-            for i in 0..output_len {
+        // Bolt: Optimizied DSP loop by replacing vector indexing with iterators (iter_mut, enumerate)
+        // to eliminate runtime bounds checking overhead, significantly improving processing performance.
+        for (ch, channel_output) in output.iter_mut().enumerate() {
+            for (i, out_sample) in channel_output.iter_mut().enumerate() {
                 let src_idx = i as f64 / ratio;
                 let low = src_idx.floor() as usize;
                 let high = src_idx.ceil() as usize;
@@ -208,9 +209,9 @@ impl MultiTrackMixer {
                 if low < input_len && high < input_len {
                     let sample_low = track[ch][low];
                     let sample_high = track[ch][high];
-                    output[ch][i] = sample_low + (sample_high - sample_low) * frac as f32;
+                    *out_sample = sample_low + (sample_high - sample_low) * frac as f32;
                 } else if low < input_len {
-                    output[ch][i] = track[ch][low];
+                    *out_sample = track[ch][low];
                 }
             }
         }
