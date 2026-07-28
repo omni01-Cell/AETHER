@@ -162,20 +162,27 @@ impl MultiTrackMixer {
             let right_pan = angle.sin();
             
             let track_ch = track.len();
-            let len = track[0].len();
             
-            for sample_idx in 0..len {
-                let (l_sample, r_sample) = if track_ch == 1 {
-                    let s = track[0][sample_idx];
-                    (s, s)
-                } else {
-                    let l = track[0][sample_idx];
-                    let r = track[1][sample_idx];
-                    (l, r)
-                };
-                
-                mixed[0][sample_idx] += l_sample * vol * left_pan;
-                mixed[1][sample_idx] += r_sample * vol * right_pan;
+            // Pre-calculate gains to avoid redundant multiplication in inner loop
+            let l_gain = vol * left_pan;
+            let r_gain = vol * right_pan;
+
+            // Split mutable slice to safely borrow independent channels concurrently
+            let (mix_l, mix_r) = mixed.split_at_mut(1);
+            let mix_l = &mut mix_l[0];
+            let mix_r = &mut mix_r[0];
+
+            // Use zip iterators to elide bounds checks for improved DSP hot loop performance
+            if track_ch == 1 {
+                for ((m_l, m_r), &s) in mix_l.iter_mut().zip(mix_r.iter_mut()).zip(track[0].iter()) {
+                    *m_l += s * l_gain;
+                    *m_r += s * r_gain;
+                }
+            } else if track_ch > 1 {
+                for ((m_l, m_r), (&l, &r)) in mix_l.iter_mut().zip(mix_r.iter_mut()).zip(track[0].iter().zip(track[1].iter())) {
+                    *m_l += l * l_gain;
+                    *m_r += r * r_gain;
+                }
             }
         }
         
