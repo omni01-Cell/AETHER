@@ -158,24 +158,32 @@ impl MultiTrackMixer {
             let pan = pans.get(i).copied().unwrap_or(0.0).clamp(-1.0, 1.0);
             
             let angle = (pan + 1.0) * std::f32::consts::FRAC_PI_4;
-            let left_pan = angle.cos();
-            let right_pan = angle.sin();
+
+            // Pre-calculate invariant mathematical variables
+            let left_gain = vol * angle.cos();
+            let right_gain = vol * angle.sin();
             
             let track_ch = track.len();
-            let len = track[0].len();
             
-            for sample_idx in 0..len {
-                let (l_sample, r_sample) = if track_ch == 1 {
-                    let s = track[0][sample_idx];
-                    (s, s)
-                } else {
-                    let l = track[0][sample_idx];
-                    let r = track[1][sample_idx];
-                    (l, r)
-                };
-                
-                mixed[0][sample_idx] += l_sample * vol * left_pan;
-                mixed[1][sample_idx] += r_sample * vol * right_pan;
+            // Use split_at_mut to get mutable, non-overlapping references to the two channels
+            let (mixed_l, mixed_r) = mixed.split_at_mut(1);
+            let mixed_l = &mut mixed_l[0];
+            let mixed_r = &mut mixed_r[0];
+
+            // Loop unswitching: extract the conditional outside of the tight loop
+            if track_ch == 1 {
+                let track_data = &track[0];
+                for ((mix_l, mix_r), &s) in mixed_l.iter_mut().zip(mixed_r.iter_mut()).zip(track_data.iter()) {
+                    *mix_l += s * left_gain;
+                    *mix_r += s * right_gain;
+                }
+            } else if track_ch > 1 {
+                let track_l = &track[0];
+                let track_r = &track[1];
+                for (((mix_l, mix_r), &l), &r) in mixed_l.iter_mut().zip(mixed_r.iter_mut()).zip(track_l.iter()).zip(track_r.iter()) {
+                    *mix_l += l * left_gain;
+                    *mix_r += r * right_gain;
+                }
             }
         }
         
