@@ -1,0 +1,3 @@
+## 2024-07-30 - [Unswitch and Elide Bounds Checks in Stateful DSP Loops]
+**Learning:** In highly iterated DSP code, evaluating conditionals (like `track_ch == 1`) inside the innermost loop for every sample and using slice indexing results in unnecessary overhead. Compilers cannot easily hoist these conditional checks or elide bounds checking when complex slice indexing is used.
+**Action:** Extract loop-invariant conditions using loop unswitching. Pre-calculate invariant mathematical results. Eliminate runtime bounds checking and bypass mutable aliasing issues by utilizing `split_at_mut` combined with `.iter_mut().zip()` for multi-buffer data processing.
