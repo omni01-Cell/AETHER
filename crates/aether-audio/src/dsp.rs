@@ -150,6 +150,10 @@ impl MultiTrackMixer {
         
         let mut mixed = vec![vec![0.0; max_len], vec![0.0; max_len]];
         
+        let (left_mixed, right_mixed) = mixed.split_at_mut(1);
+        let left_mixed = &mut left_mixed[0];
+        let right_mixed = &mut right_mixed[0];
+
         for (i, track) in resampled_tracks.iter().enumerate() {
             if track.is_empty() {
                 continue;
@@ -158,24 +162,25 @@ impl MultiTrackMixer {
             let pan = pans.get(i).copied().unwrap_or(0.0).clamp(-1.0, 1.0);
             
             let angle = (pan + 1.0) * std::f32::consts::FRAC_PI_4;
-            let left_pan = angle.cos();
-            let right_pan = angle.sin();
+            let vol_left = vol * angle.cos();
+            let vol_right = vol * angle.sin();
             
             let track_ch = track.len();
-            let len = track[0].len();
             
-            for sample_idx in 0..len {
-                let (l_sample, r_sample) = if track_ch == 1 {
-                    let s = track[0][sample_idx];
-                    (s, s)
-                } else {
-                    let l = track[0][sample_idx];
-                    let r = track[1][sample_idx];
-                    (l, r)
-                };
-                
-                mixed[0][sample_idx] += l_sample * vol * left_pan;
-                mixed[1][sample_idx] += r_sample * vol * right_pan;
+            // Optimization (Bolt):
+            // - Unswitched the `track_ch` check out of the inner loop to avoid branching on every sample.
+            // - Used `iter_mut().zip()` instead of slice indexing (`track[0][sample_idx]`) to elide runtime bounds checks.
+            // - Using `split_at_mut` above allowed safe mutable aliasing of left and right output channels.
+            if track_ch == 1 {
+                for ((out_l, out_r), &s) in left_mixed.iter_mut().zip(right_mixed.iter_mut()).zip(track[0].iter()) {
+                    *out_l += s * vol_left;
+                    *out_r += s * vol_right;
+                }
+            } else if track_ch >= 2 {
+                for (((out_l, out_r), &l_sample), &r_sample) in left_mixed.iter_mut().zip(right_mixed.iter_mut()).zip(track[0].iter()).zip(track[1].iter()) {
+                    *out_l += l_sample * vol_left;
+                    *out_r += r_sample * vol_right;
+                }
             }
         }
         
