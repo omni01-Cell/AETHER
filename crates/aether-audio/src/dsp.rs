@@ -158,24 +158,28 @@ impl MultiTrackMixer {
             let pan = pans.get(i).copied().unwrap_or(0.0).clamp(-1.0, 1.0);
             
             let angle = (pan + 1.0) * std::f32::consts::FRAC_PI_4;
-            let left_pan = angle.cos();
-            let right_pan = angle.sin();
+            // Optimization (Bolt): Pre-calculate volumetric panning values outside the loop
+            let l_gain = angle.cos() * vol;
+            let r_gain = angle.sin() * vol;
             
             let track_ch = track.len();
-            let len = track[0].len();
             
-            for sample_idx in 0..len {
-                let (l_sample, r_sample) = if track_ch == 1 {
-                    let s = track[0][sample_idx];
-                    (s, s)
-                } else {
-                    let l = track[0][sample_idx];
-                    let r = track[1][sample_idx];
-                    (l, r)
-                };
-                
-                mixed[0][sample_idx] += l_sample * vol * left_pan;
-                mixed[1][sample_idx] += r_sample * vol * right_pan;
+            // Optimization (Bolt): Split mixed buffer and zip iterators to elide runtime bounds checks
+            let (mixed_l, mixed_r) = mixed.split_at_mut(1);
+            let mixed_l = &mut mixed_l[0];
+            let mixed_r = &mut mixed_r[0];
+
+            if track_ch == 1 {
+                // Optimization (Bolt): Hoisted conditional out of inner loop
+                for ((out_l, out_r), &s) in mixed_l.iter_mut().zip(mixed_r.iter_mut()).zip(track[0].iter()) {
+                    *out_l += s * l_gain;
+                    *out_r += s * r_gain;
+                }
+            } else if track_ch >= 2 {
+                for (((out_l, out_r), &l), &r) in mixed_l.iter_mut().zip(mixed_r.iter_mut()).zip(track[0].iter()).zip(track[1].iter()) {
+                    *out_l += l * l_gain;
+                    *out_r += r * r_gain;
+                }
             }
         }
         
