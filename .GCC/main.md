@@ -41,3 +41,9 @@ Attendre l'approbation de l'utilisateur sur le plan d'implémentation avant de c
 
 ## Abandoned branches
 - None
+## 🌿 Active Branches / Plans
+## 🌿 Active Branches / Plans
+
+### JULES AI Tasks
+
+- `MultiTrackMixer::mix` was optimized to pre-calculate values outside loops and eliminate direct indexing bounds checks using `iter_mut().zip()` and `split_at_mut` for the audio buffers.
