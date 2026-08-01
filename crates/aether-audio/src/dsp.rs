@@ -150,6 +150,11 @@ impl MultiTrackMixer {
         
         let mut mixed = vec![vec![0.0; max_len], vec![0.0; max_len]];
         
+        // Optimization (Bolt): Use split_at_mut to avoid mutable aliasing
+        let (mixed_l, mixed_r) = mixed.split_at_mut(1);
+        let mixed_l = &mut mixed_l[0];
+        let mixed_r = &mut mixed_r[0];
+
         for (i, track) in resampled_tracks.iter().enumerate() {
             if track.is_empty() {
                 continue;
@@ -164,18 +169,26 @@ impl MultiTrackMixer {
             let track_ch = track.len();
             let len = track[0].len();
             
-            for sample_idx in 0..len {
-                let (l_sample, r_sample) = if track_ch == 1 {
-                    let s = track[0][sample_idx];
-                    (s, s)
-                } else {
-                    let l = track[0][sample_idx];
-                    let r = track[1][sample_idx];
-                    (l, r)
-                };
-                
-                mixed[0][sample_idx] += l_sample * vol * left_pan;
-                mixed[1][sample_idx] += r_sample * vol * right_pan;
+            // Optimization (Bolt): Pre-calculate invariant volumes combined with pan.
+            let l_vol_pan = vol * left_pan;
+            let r_vol_pan = vol * right_pan;
+
+            // Optimization (Bolt): Use iterators with zip and split_at_mut to elide bounds checks
+            if track_ch == 1 {
+                let src = &track[0];
+                for (j, ((ml, mr), s)) in mixed_l.iter_mut().zip(mixed_r.iter_mut()).zip(src.iter()).enumerate() {
+                    if j >= len { break; }
+                    *ml += s * l_vol_pan;
+                    *mr += s * r_vol_pan;
+                }
+            } else {
+                let src_l = &track[0];
+                let src_r = &track[1];
+                for (j, (((ml, mr), sl), sr)) in mixed_l.iter_mut().zip(mixed_r.iter_mut()).zip(src_l.iter()).zip(src_r.iter()).enumerate() {
+                    if j >= len { break; }
+                    *ml += sl * l_vol_pan;
+                    *mr += sr * r_vol_pan;
+                }
             }
         }
         
@@ -198,19 +211,22 @@ impl MultiTrackMixer {
         
         let mut output = vec![vec![0.0; output_len]; channels];
         
-        for ch in 0..channels {
-            for i in 0..output_len {
-                let src_idx = i as f64 / ratio;
-                let low = src_idx.floor() as usize;
-                let high = src_idx.ceil() as usize;
-                let frac = src_idx - low as f64;
+        // Optimization (Bolt): Precalculate inverse ratio to avoid division in loop
+        let inv_ratio = 1.0 / ratio;
+
+        // Optimization (Bolt): Use iter().zip().enumerate() to elide bounds checks
+        for (ch_track, out_track) in track.iter().zip(output.iter_mut()) {
+            for (i, out_val) in out_track.iter_mut().enumerate() {
+                let src_idx = i as f64 * inv_ratio;
+                let low = src_idx as usize;
+                let high = low + 1;
+                let frac = (src_idx - low as f64) as f32;
                 
-                if low < input_len && high < input_len {
-                    let sample_low = track[ch][low];
-                    let sample_high = track[ch][high];
-                    output[ch][i] = sample_low + (sample_high - sample_low) * frac as f32;
-                } else if low < input_len {
-                    output[ch][i] = track[ch][low];
+                if let Some(sample_high) = ch_track.get(high) {
+                    let sample_low = ch_track[low];
+                    *out_val = sample_low + (sample_high - sample_low) * frac;
+                } else if let Some(sample_low) = ch_track.get(low) {
+                    *out_val = *sample_low;
                 }
             }
         }
