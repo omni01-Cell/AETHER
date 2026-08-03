@@ -85,6 +85,11 @@ impl DynamicCompressor {
         let att_coef = (-1.0 / (self.sample_rate * self.attack_s)).exp();
         let rel_coef = (-1.0 / (self.sample_rate * self.release_s)).exp();
         
+        // Optimization (Bolt): Pre-calculate threshold and slope in linear space
+        // to avoid costly log10() and powf() per sample.
+        let threshold_lin = 10.0f32.powf(self.threshold_db / 20.0);
+        let slope = 1.0 / self.ratio - 1.0;
+
         for ch in 0..channels {
             if ch >= self.envelope.len() {
                 self.envelope.push(0.0);
@@ -100,21 +105,12 @@ impl DynamicCompressor {
                     *env = rel_coef * (*env) + (1.0 - rel_coef) * input_mag;
                 }
                 
-                let env_db = if *env > 1e-5 {
-                    20.0 * env.log10()
+                // Optimization (Bolt): Apply gain reduction in linear domain
+                let gain_linear = if *env > threshold_lin {
+                    (*env / threshold_lin).powf(slope)
                 } else {
-                    -100.0
+                    1.0
                 };
-                
-                let gain_reduction_db = if env_db > self.threshold_db {
-                    let overshoot = env_db - self.threshold_db;
-                    let target_gain_db = self.threshold_db + overshoot / self.ratio;
-                    target_gain_db - env_db
-                } else {
-                    0.0
-                };
-                
-                let gain_linear = 10.0f32.powf(gain_reduction_db / 20.0);
                 *sample *= gain_linear;
             }
         }
@@ -162,20 +158,23 @@ impl MultiTrackMixer {
             let right_pan = angle.sin();
             
             let track_ch = track.len();
-            let len = track[0].len();
             
-            for sample_idx in 0..len {
-                let (l_sample, r_sample) = if track_ch == 1 {
-                    let s = track[0][sample_idx];
-                    (s, s)
-                } else {
-                    let l = track[0][sample_idx];
-                    let r = track[1][sample_idx];
-                    (l, r)
-                };
-                
-                mixed[0][sample_idx] += l_sample * vol * left_pan;
-                mixed[1][sample_idx] += r_sample * vol * right_pan;
+            // Optimization (Bolt): Pre-calculate multipliers, loop unswitching for track_ch,
+            // and use split_at_mut/zip to elide runtime bounds checks.
+            let l_mult = vol * left_pan;
+            let r_mult = vol * right_pan;
+            let (mix_l, mix_r) = mixed.split_at_mut(1);
+
+            if track_ch == 1 {
+                for (idx, &s) in track[0].iter().enumerate() {
+                    mix_l[0][idx] += s * l_mult;
+                    mix_r[0][idx] += s * r_mult;
+                }
+            } else {
+                for (idx, (&l, &r)) in track[0].iter().zip(track[1].iter()).enumerate() {
+                    mix_l[0][idx] += l * l_mult;
+                    mix_r[0][idx] += r * r_mult;
+                }
             }
         }
         
@@ -198,20 +197,50 @@ impl MultiTrackMixer {
         
         let mut output = vec![vec![0.0; output_len]; channels];
         
+        // Optimization (Bolt): Precalculate inverse ratio, use iter_mut to elide bounds checks,
+        // and partition loop into fast/slow paths to avoid branches in hot loop.
+        let inv_ratio = 1.0 / ratio;
+        let safe_output_len = if input_len > 1 {
+            ((input_len as f64 - 1.0) * ratio).ceil() as usize
+        } else {
+            0
+        };
+        let safe_len = safe_output_len.min(output_len);
+
         for ch in 0..channels {
-            for i in 0..output_len {
-                let src_idx = i as f64 / ratio;
-                let low = src_idx.floor() as usize;
-                let high = src_idx.ceil() as usize;
-                let frac = src_idx - low as f64;
+            let ch_track = &track[ch];
+            let ch_out = &mut output[ch];
+
+            let mut i = 0;
+
+            // Fast path (no bounds checks on high)
+            for out_sample in ch_out.iter_mut().take(safe_len) {
+                let src_idx = i as f64 * inv_ratio;
+                let low = src_idx as usize;
+                let high = low + 1;
+                let frac = (src_idx - low as f64) as f32;
+
+                let sample_low = ch_track[low];
+                let sample_high = ch_track[high];
+                *out_sample = sample_low + (sample_high - sample_low) * frac;
+                i += 1;
+            }
+
+            // Slow path (handles edge cases at end of track)
+            for out_sample in ch_out.iter_mut().skip(safe_len) {
+                let src_idx = i as f64 * inv_ratio;
+                let low = src_idx as usize;
+                let high = low + 1;
+                let frac = (src_idx - low as f64) as f32;
                 
-                if low < input_len && high < input_len {
-                    let sample_low = track[ch][low];
-                    let sample_high = track[ch][high];
-                    output[ch][i] = sample_low + (sample_high - sample_low) * frac as f32;
+                if high < input_len {
+                    let sample_low = ch_track[low];
+                    let sample_high = ch_track[high];
+                    *out_sample = sample_low + (sample_high - sample_low) * frac;
                 } else if low < input_len {
-                    output[ch][i] = track[ch][low];
+                    *out_sample = ch_track[low];
                 }
+                i += 1;
             }
         }
         
