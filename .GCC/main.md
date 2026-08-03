@@ -41,3 +41,5 @@ Attendre l'approbation de l'utilisateur sur le plan d'implémentation avant de c
 
 ## Abandoned branches
 - None
+## 🌿 Active Branches / Plans
+- audio-dsp-optimization: Optimized multiple audio DSP algorithms using linear domain thresholds and bounds check elisions.
