@@ -1,0 +1,3 @@
+## 2025-06-06 - Loop Unswitching and Bounds Check Elision in Audio DSP
+**Learning:** In highly iterated loops common in audio DSP code (e.g., sample-by-sample mix functions), maintaining bounds checks due to direct slice indexing and branching on invariant structural conditions (like `track_ch == 1`) creates non-trivial overhead.
+**Action:** Always extract invariant conditions outside the loop (loop unswitching) and replace direct indexing with structured `split_at_mut()` accompanied by `iter_mut().zip()` to successfully elide bounds checking completely, preventing regressions and reducing instruction footprint.
