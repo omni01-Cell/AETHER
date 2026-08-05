@@ -41,3 +41,6 @@ Attendre l'approbation de l'utilisateur sur le plan d'implémentation avant de c
 
 ## Abandoned branches
 - None
+
+## 🌿 Active Branches / Plans
+- `bolt-optimize-mixer`: Optimized the `MultiTrackMixer::mix` inner loop in `crates/aether-audio/src/dsp.rs` to elide runtime bounds checks and use loop unswitching (on behalf of JULES AI).

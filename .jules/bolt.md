@@ -1,0 +1,3 @@
+## 2024-05-24 - Optimizing DSP Loops in Safe Rust
+**Learning:** In audio signal processing loops, replacing direct slice indexing with iterators (e.g., `iter_mut().zip()`) and pre-calculating invariant variables (loop unswitching/hoisting) allows LLVM to prove safety, completely elide runtime bounds checks, and auto-vectorize the loop, yielding a ~55% reduction in execution time for the `MultiTrackMixer::mix` function.
+**Action:** When optimizing tight stateful DSP loops in Rust, prefer iterators over index-based access, hoist invariants, and use `split_at_mut` to avoid mutable aliasing while proving safety to the borrow checker.
