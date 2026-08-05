@@ -161,21 +161,32 @@ impl MultiTrackMixer {
             let left_pan = angle.cos();
             let right_pan = angle.sin();
             
+            // Optimization (Bolt): Pre-calculate invariant gain multipliers,
+            // extract conditionals outside of loops (loop unswitching),
+            // and use iter_mut().zip() with split_at_mut() to elide runtime bounds
+            // checks and avoid mutable aliasing.
+            let l_gain = vol * left_pan;
+            let r_gain = vol * right_pan;
+
             let track_ch = track.len();
-            let len = track[0].len();
             
-            for sample_idx in 0..len {
-                let (l_sample, r_sample) = if track_ch == 1 {
-                    let s = track[0][sample_idx];
-                    (s, s)
-                } else {
-                    let l = track[0][sample_idx];
-                    let r = track[1][sample_idx];
-                    (l, r)
-                };
-                
-                mixed[0][sample_idx] += l_sample * vol * left_pan;
-                mixed[1][sample_idx] += r_sample * vol * right_pan;
+            let (mixed_l_slice, mixed_r_slice) = mixed.split_at_mut(1);
+            let mixed_l = &mut mixed_l_slice[0];
+            let mixed_r = &mut mixed_r_slice[0];
+
+            if track_ch == 1 {
+                let src = &track[0];
+                for ((dst_l, dst_r), &s) in mixed_l.iter_mut().zip(mixed_r.iter_mut()).zip(src.iter()) {
+                    *dst_l += s * l_gain;
+                    *dst_r += s * r_gain;
+                }
+            } else {
+                let src_l = &track[0];
+                let src_r = &track[1];
+                for ((dst_l, dst_r), (&s_l, &s_r)) in mixed_l.iter_mut().zip(mixed_r.iter_mut()).zip(src_l.iter().zip(src_r.iter())) {
+                    *dst_l += s_l * l_gain;
+                    *dst_r += s_r * r_gain;
+                }
             }
         }
         
