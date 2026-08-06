@@ -158,24 +158,28 @@ impl MultiTrackMixer {
             let pan = pans.get(i).copied().unwrap_or(0.0).clamp(-1.0, 1.0);
             
             let angle = (pan + 1.0) * std::f32::consts::FRAC_PI_4;
-            let left_pan = angle.cos();
-            let right_pan = angle.sin();
+
+            // Optimization (Bolt): Pre-calculate invariant mathematical variables
+            // outside the loop, use iterators combined with split_at_mut to avoid
+            // bounds checks, and elide conditionals during inner tight DSP loop.
+            let vol_left = vol * angle.cos();
+            let vol_right = vol * angle.sin();
             
             let track_ch = track.len();
-            let len = track[0].len();
+            let (mixed_left, mixed_right) = mixed.split_at_mut(1);
+            let mixed_l = &mut mixed_left[0];
+            let mixed_r = &mut mixed_right[0];
             
-            for sample_idx in 0..len {
-                let (l_sample, r_sample) = if track_ch == 1 {
-                    let s = track[0][sample_idx];
-                    (s, s)
-                } else {
-                    let l = track[0][sample_idx];
-                    let r = track[1][sample_idx];
-                    (l, r)
-                };
-                
-                mixed[0][sample_idx] += l_sample * vol * left_pan;
-                mixed[1][sample_idx] += r_sample * vol * right_pan;
+            if track_ch == 1 {
+                for ((out_l, out_r), &s) in mixed_l.iter_mut().zip(mixed_r.iter_mut()).zip(track[0].iter()) {
+                    *out_l += s * vol_left;
+                    *out_r += s * vol_right;
+                }
+            } else if track_ch >= 2 {
+                for (((out_l, out_r), &l), &r) in mixed_l.iter_mut().zip(mixed_r.iter_mut()).zip(track[0].iter()).zip(track[1].iter()) {
+                    *out_l += l * vol_left;
+                    *out_r += r * vol_right;
+                }
             }
         }
         
