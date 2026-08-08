@@ -191,32 +191,45 @@ fn apply_box_blur(pixmap: &mut Pixmap, radius: f32) {
     let pixels = pixmap.pixels().to_vec();
     let mut temp = pixels.clone();
     
+    // Optimization (Bolt): Use sliding window to change complexity from O(r * w * h) to O(w * h).
+
     // Horizontal blur pass
+    let window_size = (2 * r + 1) as f32;
     for y in 0..h {
+        let mut r_sum = 0.0;
+        let mut g_sum = 0.0;
+        let mut b_sum = 0.0;
+        let mut a_sum = 0.0;
+
+        // Initialize window
+        for dx in -r..=r {
+            let nx = dx.clamp(0, w - 1);
+            let p = pixels[(y * w + nx) as usize];
+            r_sum += p.red() as f32;
+            g_sum += p.green() as f32;
+            b_sum += p.blue() as f32;
+            a_sum += p.alpha() as f32;
+        }
+
         for x in 0..w {
-            let mut r_sum = 0.0;
-            let mut g_sum = 0.0;
-            let mut b_sum = 0.0;
-            let mut a_sum = 0.0;
-            let mut count = 0.0;
-            
-            for dx in -r..=r {
-                let nx = (x + dx).clamp(0, w - 1);
-                let p = pixels[(y * w + nx) as usize];
-                r_sum += p.red() as f32;
-                g_sum += p.green() as f32;
-                b_sum += p.blue() as f32;
-                a_sum += p.alpha() as f32;
-                count += 1.0;
-            }
-            
             let dest = &mut temp[(y * w + x) as usize];
             *dest = tiny_skia::ColorU8::from_rgba(
-                (r_sum / count) as u8,
-                (g_sum / count) as u8,
-                (b_sum / count) as u8,
-                (a_sum / count) as u8,
+                (r_sum / window_size).clamp(0.0, 255.0) as u8,
+                (g_sum / window_size).clamp(0.0, 255.0) as u8,
+                (b_sum / window_size).clamp(0.0, 255.0) as u8,
+                (a_sum / window_size).clamp(0.0, 255.0) as u8,
             ).premultiply();
+
+            let out_x = (x - r).clamp(0, w - 1);
+            let in_x = (x + r + 1).clamp(0, w - 1);
+
+            let p_out = pixels[(y * w + out_x) as usize];
+            let p_in = pixels[(y * w + in_x) as usize];
+
+            r_sum += p_in.red() as f32 - p_out.red() as f32;
+            g_sum += p_in.green() as f32 - p_out.green() as f32;
+            b_sum += p_in.blue() as f32 - p_out.blue() as f32;
+            a_sum += p_in.alpha() as f32 - p_out.alpha() as f32;
         }
     }
     
@@ -224,29 +237,39 @@ fn apply_box_blur(pixmap: &mut Pixmap, radius: f32) {
     let pixels_h = temp.clone();
     let pixels_mut = pixmap.pixels_mut();
     for x in 0..w {
+        let mut r_sum = 0.0;
+        let mut g_sum = 0.0;
+        let mut b_sum = 0.0;
+        let mut a_sum = 0.0;
+
+        // Initialize window
+        for dy in -r..=r {
+            let ny = dy.clamp(0, h - 1);
+            let p = pixels_h[(ny * w + x) as usize];
+            r_sum += p.red() as f32;
+            g_sum += p.green() as f32;
+            b_sum += p.blue() as f32;
+            a_sum += p.alpha() as f32;
+        }
+
         for y in 0..h {
-            let mut r_sum = 0.0;
-            let mut g_sum = 0.0;
-            let mut b_sum = 0.0;
-            let mut a_sum = 0.0;
-            let mut count = 0.0;
-            
-            for dy in -r..=r {
-                let ny = (y + dy).clamp(0, h - 1);
-                let p = pixels_h[(ny * w + x) as usize];
-                r_sum += p.red() as f32;
-                g_sum += p.green() as f32;
-                b_sum += p.blue() as f32;
-                a_sum += p.alpha() as f32;
-                count += 1.0;
-            }
-            
             pixels_mut[(y * w + x) as usize] = tiny_skia::ColorU8::from_rgba(
-                (r_sum / count) as u8,
-                (g_sum / count) as u8,
-                (b_sum / count) as u8,
-                (a_sum / count) as u8,
+                (r_sum / window_size).clamp(0.0, 255.0) as u8,
+                (g_sum / window_size).clamp(0.0, 255.0) as u8,
+                (b_sum / window_size).clamp(0.0, 255.0) as u8,
+                (a_sum / window_size).clamp(0.0, 255.0) as u8,
             ).premultiply();
+
+            let out_y = (y - r).clamp(0, h - 1);
+            let in_y = (y + r + 1).clamp(0, h - 1);
+
+            let p_out = pixels_h[(out_y * w + x) as usize];
+            let p_in = pixels_h[(in_y * w + x) as usize];
+
+            r_sum += p_in.red() as f32 - p_out.red() as f32;
+            g_sum += p_in.green() as f32 - p_out.green() as f32;
+            b_sum += p_in.blue() as f32 - p_out.blue() as f32;
+            a_sum += p_in.alpha() as f32 - p_out.alpha() as f32;
         }
     }
 }
