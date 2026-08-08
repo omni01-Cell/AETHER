@@ -41,3 +41,5 @@ Attendre l'approbation de l'utilisateur sur le plan d'implémentation avant de c
 
 ## Abandoned branches
 - None
+- Implemented a 1D sliding window algorithm in  to optimize the  function from O(W*H*R) to O(W*H) on behalf of JULES AI.
+- Implemented a 1D sliding window algorithm in aether-image to optimize the apply_box_blur function from O(W*H*R) to O(W*H) on behalf of JULES AI.
