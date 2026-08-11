@@ -1,0 +1,3 @@
+## 2025-06-03 - Optimizing Stateful DSP Loops in Rust
+**Learning:** In hot loops like `MultiTrackMixer::mix`, heavy operations like slice indexing inside tight loops cause unnecessary runtime bounds checks. Because Rust prevents aliasing mutable slices easily, we can use `split_at_mut(1)` to concurrently iterate through parallel buffers (`mixed[0]` and `mixed[1]`) alongside track data using `iter_mut().zip()`.
+**Action:** When optimizing audio/signal processing loops, elide runtime bounds checks by pairing `split_at_mut()` with `iter_mut().zip()`, pre-calculate mathematical invariants outside the loop, and unswitch conditionals (like `track_ch == 1`) rather than evaluating them per-sample.
