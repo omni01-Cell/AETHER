@@ -23,6 +23,7 @@ Plan et implémentation SOTA des fonctionnalités manquantes d'AETHER identifié
 - [2026-06-06] Implémentation des design tokens et persistance SQLite résolue.
 - [2026-06-06] Mis à jour le rapport d'analyse d'écarts fonctionnalites_manquantes_aether.md en y cochant les fonctionnalités finalisées.
 - [2026-06-06] Effectué la recherche SOTA /deep-research et rédigé le plan d'implémentation des manquants de Premiere Pro.
+- [2025-02-17] Identified performance bottlenecks in `DynamicCompressor` and `MultiTrackMixer` and improved performance via iterator bounds check elision and extracting logic out of loop.
 
 ## 🌿 Active Branches / Plans
 - `plan_add_git_folders` : Suivi des dossiers .agent et .GCC dans Git ([plan_add_git_folders.md](file:///home/omni/Code/AETHER/.GCC/branches/plan_add_git_folders.md))
@@ -34,10 +35,11 @@ Plan et implémentation SOTA des fonctionnalités manquantes d'AETHER identifié
 - ✅ Done: Phase 3 (Design Tokens & Thèmes: SQLite persistence, CLI parsing, daemon resolution)
 - ✅ Done: Configuration auto-review & auto-merge
 - 🔄 In progress: Phase 4 & Implémentation Premiere Pro — ⏳ En attente de l'approbation de l'utilisateur pour le plan d'implémentation
+- 🔄 In progress: Optimize performance of `DynamicCompressor` and `MultiTrackMixer`
 - ⏳ Pending: Implémentation des phases 5 à 7 (Colorimétrie, Calques d'ajustement, Proxies, Queue)
 
 ## Next action
-Attendre l'approbation de l'utilisateur sur le plan d'implémentation avant de corriger expressions.rs (Phase 4) et de commencer les manquants de Premiere Pro (Phases 5 à 7).
+Attendre l'approbation de l'utilisateur sur le plan d'implémentation avant de corriger expressions.rs (Phase 4) et de commencer les manquants de Premiere Pro (Phases 5 à 7). Submit PR for performance optimizations.
 
 ## Abandoned branches
 - None
