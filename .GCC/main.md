@@ -25,6 +25,7 @@ Plan et implémentation SOTA des fonctionnalités manquantes d'AETHER identifié
 - [2026-06-06] Effectué la recherche SOTA /deep-research et rédigé le plan d'implémentation des manquants de Premiere Pro.
 
 ## 🌿 Active Branches / Plans
+- `plan_bolt_optimization` : Performance optimization for DSP loops ([plan_bolt_optimization.md](./branches/plan_bolt_optimization.md))
 - `plan_add_git_folders` : Suivi des dossiers .agent et .GCC dans Git ([plan_add_git_folders.md](file:///home/omni/Code/AETHER/.GCC/branches/plan_add_git_folders.md))
 
 
@@ -33,6 +34,7 @@ Plan et implémentation SOTA des fonctionnalités manquantes d'AETHER identifié
 - ✅ Done: Phase 2 (Moteur de disposition Taffy v0.10.1)
 - ✅ Done: Phase 3 (Design Tokens & Thèmes: SQLite persistence, CLI parsing, daemon resolution)
 - ✅ Done: Configuration auto-review & auto-merge
+- ✅ Done: JULES AI (Bolt) Performance Optimization of DSP loops in audio processing (unswitching loops and removing bounds checks).
 - 🔄 In progress: Phase 4 & Implémentation Premiere Pro — ⏳ En attente de l'approbation de l'utilisateur pour le plan d'implémentation
 - ⏳ Pending: Implémentation des phases 5 à 7 (Colorimétrie, Calques d'ajustement, Proxies, Queue)
 

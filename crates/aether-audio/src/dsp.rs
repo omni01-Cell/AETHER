@@ -163,19 +163,27 @@ impl MultiTrackMixer {
             
             let track_ch = track.len();
             let len = track[0].len();
+            let vol_l = vol * left_pan;
+            let vol_r = vol * right_pan;
             
-            for sample_idx in 0..len {
-                let (l_sample, r_sample) = if track_ch == 1 {
-                    let s = track[0][sample_idx];
-                    (s, s)
-                } else {
-                    let l = track[0][sample_idx];
-                    let r = track[1][sample_idx];
-                    (l, r)
-                };
-                
-                mixed[0][sample_idx] += l_sample * vol * left_pan;
-                mixed[1][sample_idx] += r_sample * vol * right_pan;
+            let (mixed_left, mixed_right_slice) = mixed.split_at_mut(1);
+            let mixed_l = &mut mixed_left[0][..len];
+            let mixed_r = &mut mixed_right_slice[0][..len];
+
+            // Optimization (Bolt): Extracted condition out of hot loop and used iterators over zipped parallel slices to avoid bounds checks
+            if track_ch == 1 {
+                let track_data = &track[0][..len];
+                for ((m_l, m_r), &s) in mixed_l.iter_mut().zip(mixed_r.iter_mut()).zip(track_data.iter()) {
+                    *m_l += s * vol_l;
+                    *m_r += s * vol_r;
+                }
+            } else {
+                let track_l = &track[0][..len];
+                let track_r = &track[1][..len];
+                for ((m_l, m_r), (&l, &r)) in mixed_l.iter_mut().zip(mixed_r.iter_mut()).zip(track_l.iter().zip(track_r.iter())) {
+                    *m_l += l * vol_l;
+                    *m_r += r * vol_r;
+                }
             }
         }
         

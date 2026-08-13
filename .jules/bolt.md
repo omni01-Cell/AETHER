@@ -1,0 +1,3 @@
+## 2024-08-13 - [DSP Loop Performance Optimization]
+**Learning:** Optimizing DSP loops by unswitching conditions and using iterators over zipped parallel slices (via `split_at_mut()` and `iter_mut().zip()`) instead of direct indexing eliminates runtime bounds checking overhead, significantly improving processing times for audio buffers.
+**Action:** In future Rust optimization tasks targeting loop performance, actively look for direct array/slice indexing patterns and replace them with paired iterator chaining combined with pre-calculating invariant logic outside the loops.
