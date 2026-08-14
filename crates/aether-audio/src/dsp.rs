@@ -150,6 +150,12 @@ impl MultiTrackMixer {
         
         let mut mixed = vec![vec![0.0; max_len], vec![0.0; max_len]];
         
+        // Optimization (Bolt): Use split_at_mut to get distinct mutable references
+        // to the left and right channels to satisfy the borrow checker while iterating.
+        let (mixed_left, mixed_right) = mixed.split_at_mut(1);
+        let mixed_l = &mut mixed_left[0];
+        let mixed_r = &mut mixed_right[0];
+
         for (i, track) in resampled_tracks.iter().enumerate() {
             if track.is_empty() {
                 continue;
@@ -158,24 +164,27 @@ impl MultiTrackMixer {
             let pan = pans.get(i).copied().unwrap_or(0.0).clamp(-1.0, 1.0);
             
             let angle = (pan + 1.0) * std::f32::consts::FRAC_PI_4;
-            let left_pan = angle.cos();
-            let right_pan = angle.sin();
+            // Optimization (Bolt): Pre-calculate invariant channel gains outside the inner loop.
+            let left_gain = vol * angle.cos();
+            let right_gain = vol * angle.sin();
             
             let track_ch = track.len();
-            let len = track[0].len();
             
-            for sample_idx in 0..len {
-                let (l_sample, r_sample) = if track_ch == 1 {
-                    let s = track[0][sample_idx];
-                    (s, s)
-                } else {
-                    let l = track[0][sample_idx];
-                    let r = track[1][sample_idx];
-                    (l, r)
-                };
-                
-                mixed[0][sample_idx] += l_sample * vol * left_pan;
-                mixed[1][sample_idx] += r_sample * vol * right_pan;
+            // Optimization (Bolt): Extract conditionals out of the loop (loop unswitching)
+            // and use iterators (.zip) instead of direct indexing to elide bounds checks.
+            if track_ch == 1 {
+                let track_l = &track[0];
+                for (s, (ml, mr)) in track_l.iter().zip(mixed_l.iter_mut().zip(mixed_r.iter_mut())) {
+                    *ml += s * left_gain;
+                    *mr += s * right_gain;
+                }
+            } else {
+                let track_l = &track[0];
+                let track_r = &track[1];
+                for ((l, r), (ml, mr)) in track_l.iter().zip(track_r.iter()).zip(mixed_l.iter_mut().zip(mixed_r.iter_mut())) {
+                    *ml += l * left_gain;
+                    *mr += r * right_gain;
+                }
             }
         }
         
