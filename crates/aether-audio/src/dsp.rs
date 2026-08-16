@@ -164,18 +164,27 @@ impl MultiTrackMixer {
             let track_ch = track.len();
             let len = track[0].len();
             
-            for sample_idx in 0..len {
-                let (l_sample, r_sample) = if track_ch == 1 {
-                    let s = track[0][sample_idx];
-                    (s, s)
-                } else {
-                    let l = track[0][sample_idx];
-                    let r = track[1][sample_idx];
-                    (l, r)
-                };
-                
-                mixed[0][sample_idx] += l_sample * vol * left_pan;
-                mixed[1][sample_idx] += r_sample * vol * right_pan;
+            // Optimization (Bolt): Loop unswitching for channel checks, pre-calculated constant gains, and iter_mut().zip() to elide bounds checks.
+            let (mixed_l, mixed_r) = mixed.split_at_mut(1);
+            let mix_0 = &mut mixed_l[0][..len];
+            let mix_1 = &mut mixed_r[0][..len];
+
+            let l_vol = vol * left_pan;
+            let r_vol = vol * right_pan;
+
+            if track_ch == 1 {
+                let t0 = &track[0][..len];
+                for ((&s, m0), m1) in t0.iter().zip(mix_0.iter_mut()).zip(mix_1.iter_mut()) {
+                    *m0 += s * l_vol;
+                    *m1 += s * r_vol;
+                }
+            } else {
+                let t0 = &track[0][..len];
+                let t1 = &track[1][..len];
+                for (((&l, &r), m0), m1) in t0.iter().zip(t1.iter()).zip(mix_0.iter_mut()).zip(mix_1.iter_mut()) {
+                    *m0 += l * l_vol;
+                    *m1 += r * r_vol;
+                }
             }
         }
         
@@ -198,19 +207,22 @@ impl MultiTrackMixer {
         
         let mut output = vec![vec![0.0; output_len]; channels];
         
+        // Optimization (Bolt): Elided bounds checking with iterators, pre-calculated inverse ratio, and replaced slow float rounding.
+        let inv_ratio = 1.0 / ratio;
         for ch in 0..channels {
-            for i in 0..output_len {
-                let src_idx = i as f64 / ratio;
-                let low = src_idx.floor() as usize;
-                let high = src_idx.ceil() as usize;
-                let frac = src_idx - low as f64;
+            let tr = &track[ch];
+            for (i, out_sample) in output[ch].iter_mut().enumerate() {
+                let src_idx = i as f64 * inv_ratio;
+                let low = src_idx as usize;
+                let high = low + 1;
+                let frac = (src_idx - low as f64) as f32;
                 
-                if low < input_len && high < input_len {
-                    let sample_low = track[ch][low];
-                    let sample_high = track[ch][high];
-                    output[ch][i] = sample_low + (sample_high - sample_low) * frac as f32;
+                if high < input_len {
+                    let sample_low = tr[low];
+                    let sample_high = tr[high];
+                    *out_sample = sample_low + (sample_high - sample_low) * frac;
                 } else if low < input_len {
-                    output[ch][i] = track[ch][low];
+                    *out_sample = tr[low];
                 }
             }
         }

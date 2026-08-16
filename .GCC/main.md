@@ -25,6 +25,7 @@ Plan et implémentation SOTA des fonctionnalités manquantes d'AETHER identifié
 - [2026-06-06] Effectué la recherche SOTA /deep-research et rédigé le plan d'implémentation des manquants de Premiere Pro.
 
 ## 🌿 Active Branches / Plans
+- `plan_dsp_optimize` : Optimize DSP mix and resample loops for performance ([plan_dsp_optimize.md](.GCC/branches/plan_dsp_optimize.md))
 - `plan_add_git_folders` : Suivi des dossiers .agent et .GCC dans Git ([plan_add_git_folders.md](file:///home/omni/Code/AETHER/.GCC/branches/plan_add_git_folders.md))
 
 
