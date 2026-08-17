@@ -26,6 +26,7 @@ Plan et implémentation SOTA des fonctionnalités manquantes d'AETHER identifié
 
 ## 🌿 Active Branches / Plans
 - `plan_add_git_folders` : Suivi des dossiers .agent et .GCC dans Git ([plan_add_git_folders.md](file:///home/omni/Code/AETHER/.GCC/branches/plan_add_git_folders.md))
+- `plan_bolt_compressor_opt` : Optimization of DynamicCompressor inner loop ([plan_bolt_compressor_opt.md](.GCC/branches/plan_bolt_compressor_opt.md))
 
 
 ## Current status

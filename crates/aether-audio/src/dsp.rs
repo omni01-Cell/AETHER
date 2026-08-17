@@ -85,37 +85,38 @@ impl DynamicCompressor {
         let att_coef = (-1.0 / (self.sample_rate * self.attack_s)).exp();
         let rel_coef = (-1.0 / (self.sample_rate * self.release_s)).exp();
         
-        for ch in 0..channels {
-            if ch >= self.envelope.len() {
-                self.envelope.push(0.0);
-            }
-            let env = &mut self.envelope[ch];
-            
-            for sample in &mut samples[ch] {
+        // Optimization (Bolt): Pre-calculate invariant mathematical variables
+        // to avoid recalculating them inside the inner loop 44,100 times per second.
+        let threshold_linear = 10.0f32.powf(self.threshold_db / 20.0);
+        let inverse_ratio_minus_one = (1.0 / self.ratio) - 1.0;
+        let att_coef_minus_one = 1.0 - att_coef;
+        let rel_coef_minus_one = 1.0 - rel_coef;
+
+        if self.envelope.len() < channels {
+            self.envelope.resize(channels, 0.0);
+        }
+
+        // Optimization (Bolt): Use iter_mut().zip() to elide runtime bounds checks
+        // and avoid direct slice indexing.
+        for (ch_samples, env) in samples.iter_mut().zip(self.envelope.iter_mut()) {
+            for sample in ch_samples.iter_mut() {
                 let input_mag = sample.abs();
                 
                 if input_mag > *env {
-                    *env = att_coef * (*env) + (1.0 - att_coef) * input_mag;
+                    *env = att_coef * (*env) + att_coef_minus_one * input_mag;
                 } else {
-                    *env = rel_coef * (*env) + (1.0 - rel_coef) * input_mag;
+                    *env = rel_coef * (*env) + rel_coef_minus_one * input_mag;
                 }
                 
-                let env_db = if *env > 1e-5 {
-                    20.0 * env.log10()
-                } else {
-                    -100.0
-                };
-                
-                let gain_reduction_db = if env_db > self.threshold_db {
+                // Optimization (Bolt): Avoid converting to decibel space entirely
+                // if the envelope is below the compression threshold in linear space.
+                // This removes an expensive log10() and powf() calculation for uncompressed samples.
+                if *env > threshold_linear {
+                    let env_db = 20.0 * env.log10();
                     let overshoot = env_db - self.threshold_db;
-                    let target_gain_db = self.threshold_db + overshoot / self.ratio;
-                    target_gain_db - env_db
-                } else {
-                    0.0
-                };
-                
-                let gain_linear = 10.0f32.powf(gain_reduction_db / 20.0);
-                *sample *= gain_linear;
+                    let new_gain_reduction_db = overshoot * inverse_ratio_minus_one;
+                    *sample *= 10.0f32.powf(new_gain_reduction_db / 20.0);
+                }
             }
         }
     }
