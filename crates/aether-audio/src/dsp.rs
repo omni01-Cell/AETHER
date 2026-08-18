@@ -85,6 +85,9 @@ impl DynamicCompressor {
         let att_coef = (-1.0 / (self.sample_rate * self.attack_s)).exp();
         let rel_coef = (-1.0 / (self.sample_rate * self.release_s)).exp();
         
+        // Optimization (Bolt): Pre-calculated linear threshold outside the inner processing loop to elide expensive decibel-space conversions (log10, powf) when signal is below threshold.
+        let threshold_linear = 10.0f32.powf(self.threshold_db / 20.0);
+
         for ch in 0..channels {
             if ch >= self.envelope.len() {
                 self.envelope.push(0.0);
@@ -100,22 +103,14 @@ impl DynamicCompressor {
                     *env = rel_coef * (*env) + (1.0 - rel_coef) * input_mag;
                 }
                 
-                let env_db = if *env > 1e-5 {
-                    20.0 * env.log10()
-                } else {
-                    -100.0
-                };
-                
-                let gain_reduction_db = if env_db > self.threshold_db {
+                if *env > threshold_linear {
+                    let env_db = 20.0 * env.log10();
                     let overshoot = env_db - self.threshold_db;
                     let target_gain_db = self.threshold_db + overshoot / self.ratio;
-                    target_gain_db - env_db
-                } else {
-                    0.0
-                };
-                
-                let gain_linear = 10.0f32.powf(gain_reduction_db / 20.0);
-                *sample *= gain_linear;
+                    let gain_reduction_db = target_gain_db - env_db;
+                    let gain_linear = 10.0f32.powf(gain_reduction_db / 20.0);
+                    *sample *= gain_linear;
+                }
             }
         }
     }
