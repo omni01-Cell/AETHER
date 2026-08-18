@@ -23,6 +23,7 @@ Plan et implémentation SOTA des fonctionnalités manquantes d'AETHER identifié
 - [2026-06-06] Implémentation des design tokens et persistance SQLite résolue.
 - [2026-06-06] Mis à jour le rapport d'analyse d'écarts fonctionnalites_manquantes_aether.md en y cochant les fonctionnalités finalisées.
 - [2026-06-06] Effectué la recherche SOTA /deep-research et rédigé le plan d'implémentation des manquants de Premiere Pro.
+- [2025-06-03] KeyframeTrack optimization: Use `partition_point` binary search in `KeyframeTrack<f32>::interpolate` to achieve O(log N) lookup time instead of linear O(N) loop.
 
 ## 🌿 Active Branches / Plans
 - `bolt-optimize-compressor` : Optimize DynamicCompressor decibel math
