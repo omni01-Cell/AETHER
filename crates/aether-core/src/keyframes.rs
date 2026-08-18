@@ -102,8 +102,7 @@ impl std::str::FromStr for EasingFunction {
             let trimmed = s
                 .replace("cubic_bezier", "")
                 .replace("cubic-bezier", "")
-                .replace('(', "")
-                .replace(')', "");
+                .replace(['(', ')'], "");
             let parts: Vec<&str> = trimmed.split(',').map(|p| p.trim()).collect();
             if parts.len() == 4 {
                 let x1 = parts[0].parse::<f32>().map_err(|e| crate::AetherError::InvalidCommand(e.to_string()))?;
@@ -170,13 +169,8 @@ impl KeyframeTrack<f32> {
             return self.keyframes[last_idx].value;
         }
 
-        let mut idx = 0;
-        for i in 0..last_idx {
-            if time_ms >= self.keyframes[i].time_ms && time_ms <= self.keyframes[i+1].time_ms {
-                idx = i;
-                break;
-            }
-        }
+        // Optimization (Bolt): Use binary search via partition_point to find the active keyframe interval in O(log N) instead of O(N) linear scan.
+        let idx = self.keyframes.partition_point(|k| k.time_ms <= time_ms) - 1;
 
         let kf0 = &self.keyframes[idx];
         let kf1 = &self.keyframes[idx + 1];
@@ -245,5 +239,24 @@ mod tests {
         assert_eq!(track.interpolate(500), 5.0);
         assert_eq!(track.interpolate(1000), 10.0);
         assert_eq!(track.interpolate(1500), 10.0);
+    }
+
+    #[test]
+    fn test_large_keyframe_track_binary_search() {
+        let mut track = KeyframeTrack::new();
+        for i in 0..100 {
+            track.insert_keyframe(Keyframe {
+                time_ms: i * 100,
+                value: i as f32 * 10.0,
+                easing: EasingFunction::Linear,
+            });
+        }
+
+        assert_eq!(track.interpolate(0), 0.0);
+        assert_eq!(track.interpolate(50), 5.0);
+        assert_eq!(track.interpolate(250), 25.0);
+        assert_eq!(track.interpolate(9850), 985.0);
+        assert_eq!(track.interpolate(9900), 990.0);
+        assert_eq!(track.interpolate(10000), 990.0);
     }
 }
