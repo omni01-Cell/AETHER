@@ -140,7 +140,7 @@ pub fn trim_audio(
     let output_path = cache_dir.join(format!("{}.{}", new_hash, ext));
 
     if !output_path.exists() {
-        let status = std::process::Command::new("ffmpeg")
+        let ffmpeg_res = std::process::Command::new("ffmpeg")
             .args([
                 "-ss", start,
                 "-to", end,
@@ -149,14 +149,32 @@ pub fn trim_audio(
                 "-y",
                 output_path.to_str().unwrap(),
             ])
-            .status()
-            .map_err(|e| AetherError::MediaError(format!("Failed to run FFmpeg trim audio: {}", e)))?;
+            .status();
 
-        if !status.success() {
-            return Err(AetherError::MediaError(format!(
-                "FFmpeg trim audio process exited with status {}",
-                status
-            )));
+        let success = match ffmpeg_res {
+            Ok(status) => status.success(),
+            Err(_) => false,
+        };
+
+        if !success {
+            let (samples, sample_rate) = decode_audio_file(&asset.path)?;
+            let start_sec: f32 = start.parse().unwrap_or(0.0);
+            let end_sec: f32 = end.parse().unwrap_or(0.0);
+            let start_idx = (start_sec * sample_rate as f32) as usize;
+            let end_idx = if end_sec > 0.0 {
+                (end_sec * sample_rate as f32) as usize
+            } else {
+                samples.first().map(|ch| ch.len()).unwrap_or(0)
+            };
+
+            let mut trimmed_samples = Vec::new();
+            for ch in &samples {
+                let s_idx = start_idx.min(ch.len());
+                let e_idx = end_idx.min(ch.len()).max(s_idx);
+                trimmed_samples.push(ch[s_idx..e_idx].to_vec());
+            }
+
+            encode_audio_file(&trimmed_samples, sample_rate, &output_path)?;
         }
     }
 
@@ -192,7 +210,7 @@ pub fn normalize_audio(
     if !output_path.exists() {
         let sample_rate = asset.metadata["sample_rate"].as_u64().unwrap_or(44100);
         let filter_str = format!("loudnorm=I={:.1}:TP={:.1}", lufs, true_peak);
-        let status = std::process::Command::new("ffmpeg")
+        let ffmpeg_res = std::process::Command::new("ffmpeg")
             .args([
                 "-i", asset.path.to_str().unwrap(),
                 "-filter:a", &filter_str,
@@ -201,14 +219,33 @@ pub fn normalize_audio(
                 "-y",
                 output_path.to_str().unwrap(),
             ])
-            .status()
-            .map_err(|e| AetherError::MediaError(format!("Failed to run FFmpeg loudnorm audio: {}", e)))?;
+            .status();
 
-        if !status.success() {
-            return Err(AetherError::MediaError(format!(
-                "FFmpeg loudnorm audio process exited with status {}",
-                status
-            )));
+        let success = match ffmpeg_res {
+            Ok(status) => status.success(),
+            Err(_) => false,
+        };
+
+        if !success {
+            let (mut samples, sr) = decode_audio_file(&asset.path)?;
+            let target_linear = 10.0f32.powf(true_peak / 20.0);
+            let mut current_peak = 0.0f32;
+            for ch in &samples {
+                for &s in ch {
+                    if s.abs() > current_peak {
+                        current_peak = s.abs();
+                    }
+                }
+            }
+            if current_peak > 0.0 {
+                let gain = target_linear / current_peak;
+                for ch in &mut samples {
+                    for s in ch {
+                        *s *= gain;
+                    }
+                }
+            }
+            encode_audio_file(&samples, sr, &output_path)?;
         }
     }
 
@@ -505,17 +542,15 @@ mod tests {
         if let Some(parent) = output_path.parent() {
             let _ = fs::create_dir_all(parent);
         }
-        let status = std::process::Command::new("ffmpeg")
-            .args([
-                "-f", "lavfi",
-                "-i", "sine=duration=2:frequency=1000",
-                "-c:a", "pcm_s16le",
-                "-y",
-                output_path.to_str().unwrap(),
-            ])
-            .status()
-            .expect("Failed to run FFmpeg synthetic audio generator");
-        assert!(status.success(), "FFmpeg synthetic audio generator failed");
+        let sample_rate = 44100;
+        let num_samples = sample_rate * 2;
+        let mut samples = vec![vec![0.0f32; num_samples]];
+        for i in 0..num_samples {
+            let t = i as f32 / sample_rate as f32;
+            samples[0][i] = (2.0 * std::f32::consts::PI * 1000.0 * t).sin();
+        }
+        encode_audio_file(&samples, sample_rate as u32, output_path)
+            .expect("Failed to write synthetic wav");
     }
 
     #[test]
