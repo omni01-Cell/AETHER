@@ -156,21 +156,34 @@ impl MultiTrackMixer {
             let left_pan = angle.cos();
             let right_pan = angle.sin();
             
+            // Optimization (Bolt): Precompute combined left and right track gains outside the per-sample loop
+            // to avoid redundant multiplication operations per sample.
+            let left_gain = vol * left_pan;
+            let right_gain = vol * right_pan;
+
             let track_ch = track.len();
             let len = track[0].len();
             
-            for sample_idx in 0..len {
-                let (l_sample, r_sample) = if track_ch == 1 {
-                    let s = track[0][sample_idx];
-                    (s, s)
-                } else {
-                    let l = track[0][sample_idx];
-                    let r = track[1][sample_idx];
-                    (l, r)
-                };
-                
-                mixed[0][sample_idx] += l_sample * vol * left_pan;
-                mixed[1][sample_idx] += r_sample * vol * right_pan;
+            let (mixed_left, mixed_right) = mixed.split_at_mut(1);
+            let out_l = &mut mixed_left[0][..len];
+            let out_r = &mut mixed_right[0][..len];
+
+            // Optimization (Bolt): Separate mono vs stereo processing into branchless loops using slice references
+            // to eliminate per-sample condition checks and enable LLVM auto-vectorization (SIMD).
+            if track_ch == 1 {
+                let in_mono = &track[0][..len];
+                for sample_idx in 0..len {
+                    let s = in_mono[sample_idx];
+                    out_l[sample_idx] += s * left_gain;
+                    out_r[sample_idx] += s * right_gain;
+                }
+            } else {
+                let in_l = &track[0][..len];
+                let in_r = &track[1][..len];
+                for sample_idx in 0..len {
+                    out_l[sample_idx] += in_l[sample_idx] * left_gain;
+                    out_r[sample_idx] += in_r[sample_idx] * right_gain;
+                }
             }
         }
         

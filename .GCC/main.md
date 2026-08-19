@@ -10,6 +10,7 @@
 Plan et implémentation SOTA des fonctionnalités manquantes d'AETHER identifiées dans `fonctionnalites_manquantes_aether.md` : moteur de layout fluide (taffy), expression engine (evalexpr), automatisation sémantique audio/vidéo (detect-cuts, strip-silence), design tokens, colorimétrie avancée, bus audio, et enrichissement du compositing.
 
 ## Decisions made
+- [2025-06-03] Optimized MultiTrackMixer::mix in crates/aether-audio/src/dsp.rs by hoisting track gain multiplications and branch checks outside per-sample loop.
 - [2025-06-02] Architecture: system.md + model JSON files for prompt injection (not external files at runtime)
 - [2025-06-02] Bridge pattern: TypeScript bridge handles API calls, Rust handles orchestration
 - [2025-06-02] Video providers: Kling 3.0 (Kuaishou) as primary for VideoText/VideoFrame, Seedance 2.0 (ByteDance) for VideoIngredients/VideoEdit
