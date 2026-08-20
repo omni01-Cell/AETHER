@@ -170,13 +170,11 @@ impl KeyframeTrack<f32> {
             return self.keyframes[last_idx].value;
         }
 
-        let mut idx = 0;
-        for i in 0..last_idx {
-            if time_ms >= self.keyframes[i].time_ms && time_ms <= self.keyframes[i+1].time_ms {
-                idx = i;
-                break;
-            }
-        }
+        // Optimization (Bolt): Use binary search O(log N) instead of linear search O(N) over sorted keyframes.
+        let idx = match self.keyframes.binary_search_by_key(&time_ms, |k| k.time_ms) {
+            Ok(i) => i.min(last_idx - 1),
+            Err(i) => (i - 1).min(last_idx - 1),
+        };
 
         let kf0 = &self.keyframes[idx];
         let kf1 = &self.keyframes[idx + 1];

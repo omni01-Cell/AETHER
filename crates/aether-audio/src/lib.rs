@@ -633,4 +633,23 @@ mod tests {
         assert!((mixed[0][0] - 1.0).abs() < 1e-4);
         assert!((mixed[1][0] - 2.0).abs() < 1e-4);
     }
+
+    #[test]
+    fn test_multitrack_resampling() {
+        // Track at 22050 Hz mixed into 44100 Hz target rate
+        let track1 = vec![vec![0.5; 500]];
+        let tracks = vec![track1];
+        let sample_rates = vec![22050];
+        let volumes = vec![1.0];
+        let pans = vec![0.0];
+
+        let mixed = dsp::MultiTrackMixer::mix(&tracks, &sample_rates, &volumes, &pans, 44100).unwrap();
+
+        assert_eq!(mixed.len(), 2);
+        assert_eq!(mixed[0].len(), 1000);
+        assert_eq!(mixed[1].len(), 1000);
+        for s in &mixed[0] {
+            assert!((s - 0.35355).abs() < 1e-3);
+        }
+    }
 }
