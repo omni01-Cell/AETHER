@@ -156,21 +156,34 @@ impl MultiTrackMixer {
             let left_pan = angle.cos();
             let right_pan = angle.sin();
             
+            // Optimization (Bolt): Pre-calculate combined channel gains outside the inner loop to eliminate per-sample multiplications.
+            let left_gain = vol * left_pan;
+            let right_gain = vol * right_pan;
+
             let track_ch = track.len();
             let len = track[0].len();
-            
-            for sample_idx in 0..len {
-                let (l_sample, r_sample) = if track_ch == 1 {
-                    let s = track[0][sample_idx];
-                    (s, s)
-                } else {
-                    let l = track[0][sample_idx];
-                    let r = track[1][sample_idx];
-                    (l, r)
-                };
-                
-                mixed[0][sample_idx] += l_sample * vol * left_pan;
-                mixed[1][sample_idx] += r_sample * vol * right_pan;
+
+            // Optimization (Bolt): Branch on channel count outside the inner loop to eliminate per-sample conditionals and enable SIMD auto-vectorization.
+            let (mix0_split, mix1_split) = mixed.split_at_mut(1);
+            let mix0 = &mut mix0_split[0];
+            let mix1 = &mut mix1_split[0];
+
+            if track_ch == 1 {
+                let track_mono = &track[0];
+                for sample_idx in 0..len {
+                    let s = track_mono[sample_idx];
+                    mix0[sample_idx] += s * left_gain;
+                    mix1[sample_idx] += s * right_gain;
+                }
+            } else {
+                let track_l = &track[0];
+                let track_r = &track[1];
+                for sample_idx in 0..len {
+                    let l = track_l[sample_idx];
+                    let r = track_r[sample_idx];
+                    mix0[sample_idx] += l * left_gain;
+                    mix1[sample_idx] += r * right_gain;
+                }
             }
         }
         
@@ -193,17 +206,20 @@ impl MultiTrackMixer {
         
         let mut output = vec![vec![0.0; output_len]; channels];
         
-        for ch in 0..channels {
-            for i in 0..output_len {
-                let src_idx = i as f64 / ratio;
-                let low = src_idx.floor() as usize;
-                let high = src_idx.ceil() as usize;
-                let frac = src_idx - low as f64;
-                
-                if low < input_len && high < input_len {
+        // Optimization (Bolt): Pre-calculate reciprocal ratio (inv_ratio) and eliminate f64 division, floor(), and ceil() calls in inner loop.
+        let inv_ratio = from_rate as f64 / to_rate as f64;
+
+        for i in 0..output_len {
+            let src_idx = i as f64 * inv_ratio;
+            let low = src_idx as usize;
+            let frac = (src_idx - low as f64) as f32;
+            let high = low + 1;
+
+            for ch in 0..channels {
+                if high < input_len {
                     let sample_low = track[ch][low];
                     let sample_high = track[ch][high];
-                    output[ch][i] = sample_low + (sample_high - sample_low) * frac as f32;
+                    output[ch][i] = sample_low + (sample_high - sample_low) * frac;
                 } else if low < input_len {
                     output[ch][i] = track[ch][low];
                 }

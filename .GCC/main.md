@@ -10,6 +10,7 @@
 Plan et implémentation SOTA des fonctionnalités manquantes d'AETHER identifiées dans `fonctionnalites_manquantes_aether.md` : moteur de layout fluide (taffy), expression engine (evalexpr), automatisation sémantique audio/vidéo (detect-cuts, strip-silence), design tokens, colorimétrie avancée, bus audio, et enrichissement du compositing.
 
 ## Decisions made
+- [2026-08-20] Optimized MultiTrackMixer DSP mixing/resampling and KeyframeTrack interpolation for measurably faster performance.
 - [2025-06-02] Architecture: system.md + model JSON files for prompt injection (not external files at runtime)
 - [2025-06-02] Bridge pattern: TypeScript bridge handles API calls, Rust handles orchestration
 - [2025-06-02] Video providers: Kling 3.0 (Kuaishou) as primary for VideoText/VideoFrame, Seedance 2.0 (ByteDance) for VideoIngredients/VideoEdit
@@ -34,11 +35,12 @@ Plan et implémentation SOTA des fonctionnalités manquantes d'AETHER identifié
 - ✅ Done: Phase 2 (Moteur de disposition Taffy v0.10.1)
 - ✅ Done: Phase 3 (Design Tokens & Thèmes: SQLite persistence, CLI parsing, daemon resolution)
 - ✅ Done: Configuration auto-review & auto-merge
-- 🔄 In progress: Phase 4 & Implémentation Premiere Pro — ⏳ En attente de l'approbation de l'utilisateur pour le plan d'implémentation
+- ✅ Done: DSP & Keyframe performance optimizations (Bolt)
+- 🔄 In progress: Phase 4 & Implémentation Premiere Pro
 - ⏳ Pending: Implémentation des phases 5 à 7 (Colorimétrie, Calques d'ajustement, Proxies, Queue)
 
 ## Next action
-Attendre l'approbation de l'utilisateur sur le plan d'implémentation avant de corriger expressions.rs (Phase 4) et de commencer les manquants de Premiere Pro (Phases 5 à 7).
+Finalize submission for Bolt performance optimizations PR.
 
 ## Abandoned branches
 - None
