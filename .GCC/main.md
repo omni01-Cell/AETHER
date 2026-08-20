@@ -29,16 +29,16 @@ Plan et implémentation SOTA des fonctionnalités manquantes d'AETHER identifié
 - `plan_add_git_folders` : Suivi des dossiers .agent et .GCC dans Git ([plan_add_git_folders.md](file:///home/omni/Code/AETHER/.GCC/branches/plan_add_git_folders.md))
 
 
+## Decisions made
+- [2026-06-06] Forensic audit started: identifying and fixing type safety, input validation, audio DSP division-by-zero, and bridge logic bugs.
+
 ## Current status
-- ✅ Done: Phase 1 (Automatisation Sémantique: detect-cuts, strip-silence, analyze-color)
-- ✅ Done: Phase 2 (Moteur de disposition Taffy v0.10.1)
-- ✅ Done: Phase 3 (Design Tokens & Thèmes: SQLite persistence, CLI parsing, daemon resolution)
-- ✅ Done: Configuration auto-review & auto-merge
-- 🔄 In progress: Phase 4 & Implémentation Premiere Pro — ⏳ En attente de l'approbation de l'utilisateur pour le plan d'implémentation
-- ⏳ Pending: Implémentation des phases 5 à 7 (Colorimétrie, Calques d'ajustement, Proxies, Queue)
+- ✅ Done: Phase 1-3 features
+- ✅ Done: Forensic Codebase Audit & Remediation (TypeScript type safety, Rust bridge generation logic, Audio DSP division-by-zero, Keyframe cubic bezier bounds)
+- ✅ Done: Complete forensic audit report generation
 
 ## Next action
-Attendre l'approbation de l'utilisateur sur le plan d'implémentation avant de corriger expressions.rs (Phase 4) et de commencer les manquants de Premiere Pro (Phases 5 à 7).
+Submit change and present forensic audit report.
 
 ## Abandoned branches
 - None

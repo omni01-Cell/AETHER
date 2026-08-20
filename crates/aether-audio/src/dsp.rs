@@ -70,23 +70,29 @@ impl DynamicCompressor {
         sample_rate: u32,
         channels: usize,
     ) -> Self {
+        let attack_s = (attack_ms / 1000.0).max(0.0001);
+        let release_s = (release_ms / 1000.0).max(0.0001);
+        let sample_rate = (sample_rate as f32).max(1.0);
+        let ratio = ratio.max(1.0);
+
         DynamicCompressor {
             threshold_db,
             ratio,
-            attack_s: attack_ms / 1000.0,
-            release_s: release_ms / 1000.0,
-            sample_rate: sample_rate as f32,
+            attack_s,
+            release_s,
+            sample_rate,
             envelope: vec![0.0; channels],
         }
     }
     
     pub fn process(&mut self, samples: &mut [Vec<f32>]) {
         let channels = samples.len();
-        let att_coef = (-1.0 / (self.sample_rate * self.attack_s)).exp();
-        let rel_coef = (-1.0 / (self.sample_rate * self.release_s)).exp();
+        let att_coef = (-1.0 / (self.sample_rate * self.attack_s.max(0.0001))).exp();
+        let rel_coef = (-1.0 / (self.sample_rate * self.release_s.max(0.0001))).exp();
         
         // Optimization (Bolt): Pre-calculated linear threshold outside the inner processing loop to elide expensive decibel-space conversions (log10, powf) when signal is below threshold.
         let threshold_linear = 10.0f32.powf(self.threshold_db / 20.0);
+        let ratio = self.ratio.max(1.0);
 
         for ch in 0..channels {
             if ch >= self.envelope.len() {
@@ -103,13 +109,15 @@ impl DynamicCompressor {
                     *env = rel_coef * (*env) + (1.0 - rel_coef) * input_mag;
                 }
                 
-                if *env > threshold_linear {
+                if *env > threshold_linear && *env > 0.0 {
                     let env_db = 20.0 * env.log10();
                     let overshoot = env_db - self.threshold_db;
-                    let target_gain_db = self.threshold_db + overshoot / self.ratio;
+                    let target_gain_db = self.threshold_db + overshoot / ratio;
                     let gain_reduction_db = target_gain_db - env_db;
                     let gain_linear = 10.0f32.powf(gain_reduction_db / 20.0);
-                    *sample *= gain_linear;
+                    if gain_linear.is_finite() {
+                        *sample *= gain_linear;
+                    }
                 }
             }
         }
