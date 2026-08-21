@@ -37,7 +37,7 @@ impl EasingFunction {
 
 // Cubic bezier solver using Newton-Raphson with binary search fallback
 fn solve_cubic_bezier(x1: f32, y1: f32, x2: f32, y2: f32, t: f32) -> f32 {
-    let mut tau = t;
+    let mut tau = t.clamp(0.0, 1.0);
     for _ in 0..8 {
         let x = sample_curve_x(x1, x2, tau);
         let dx = sample_curve_derivative_x(x1, x2, tau);
@@ -45,14 +45,14 @@ fn solve_cubic_bezier(x1: f32, y1: f32, x2: f32, y2: f32, t: f32) -> f32 {
             break;
         }
         let diff = x - t;
-        tau -= diff / dx;
+        tau = (tau - diff / dx).clamp(0.0, 1.0);
     }
 
     // Binary search fallback if Newton-Raphson didn't converge perfectly
     if (sample_curve_x(x1, x2, tau) - t).abs() > 1e-4 {
         let mut low = 0.0;
         let mut high = 1.0;
-        tau = t;
+        tau = t.clamp(0.0, 1.0);
         while high - low > 1e-5 {
             let x = sample_curve_x(x1, x2, tau);
             if (x - t).abs() < 1e-5 {

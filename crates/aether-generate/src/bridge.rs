@@ -229,9 +229,11 @@ impl BridgeGenerationProvider {
             })
             .unwrap_or_default();
 
-        if input_paths.is_empty() {
+        if matches!(request.kind, GenerationKind::ImageEdit | GenerationKind::VideoFrame)
+            && input_paths.is_empty()
+        {
             return Err(AetherError::OperationFailed(
-                "Bridge image_edit requires options.input_asset_paths (absolute file paths)"
+                "Bridge requires options.input_asset_paths (absolute file paths) for image edit or frame video operations"
                     .to_string(),
             ));
         }
