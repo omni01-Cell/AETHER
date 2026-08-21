@@ -1483,7 +1483,10 @@ mod tests {
         let entries: Vec<_> = fs::read_dir(&plan_dir).unwrap().collect();
         assert_eq!(entries.len(), 1);
         let plan_file = entries[0].as_ref().unwrap().path();
-        let plan_id = plan_file.file_stem().unwrap().to_str().unwrap().to_string();
+        let plan_id = plan_file
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
 
         // 4. Run 'plan show'
         let cmd_show = parse_dsl(&format!("plan show {}", plan_id)).unwrap();

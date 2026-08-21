@@ -30,9 +30,9 @@ fn run_xfade(
     
     let mut args = vec![
         "-i".to_string(),
-        v1.path.to_str().unwrap().to_string(),
+        v1.path.to_string_lossy().to_string(),
         "-i".to_string(),
-        v2.path.to_str().unwrap().to_string(),
+        v2.path.to_string_lossy().to_string(),
     ];
     
     let filter_str = if has_audio1 && has_audio2 {
@@ -68,7 +68,7 @@ fn run_xfade(
     args.push("-c:a".to_string());
     args.push("aac".to_string());
     args.push("-y".to_string());
-    args.push(output_path.to_str().unwrap().to_string());
+    args.push(output_path.to_string_lossy().to_string());
     
     let status = std::process::Command::new("ffmpeg")
         .args(&args)

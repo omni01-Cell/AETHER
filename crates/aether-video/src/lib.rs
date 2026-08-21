@@ -125,11 +125,11 @@ pub fn trim_video(
             .args([
                 "-ss", start,
                 "-to", end,
-                "-i", asset.path.to_str().unwrap(),
+                "-i", &asset.path.to_string_lossy(),
                 "-c:v", "libx264",
                 "-c:a", "aac",
                 "-y",
-                output_path.to_str().unwrap(),
+                &output_path.to_string_lossy(),
             ])
             .status()
             .map_err(|e| AetherError::MediaError(format!("Failed to run FFmpeg trim: {}", e)))?;
@@ -176,7 +176,7 @@ pub fn concat_video(
     if !output_path.exists() {
         let mut cmd = std::process::Command::new("ffmpeg");
         for asset in assets {
-            cmd.arg("-i").arg(asset.path.to_str().unwrap());
+            cmd.arg("-i").arg(&asset.path.to_string_lossy().to_string());
         }
 
         let mut filter_complex = String::new();
@@ -193,7 +193,7 @@ pub fn concat_video(
                 "-c:v", "libx264",
                 "-c:a", "aac",
                 "-y",
-                output_path.to_str().unwrap(),
+                &output_path.to_string_lossy(),
             ])
             .status()
             .map_err(|e| AetherError::MediaError(format!("Failed to run FFmpeg concat: {}", e)))?;
@@ -249,13 +249,13 @@ pub fn render_video(
 
     let status = std::process::Command::new("ffmpeg")
         .args([
-            "-i", timeline_asset.path.to_str().unwrap(),
+            "-i", &timeline_asset.path.to_string_lossy(),
             "-c:v", v_codec,
             "-crf", crf,
             "-c:a", "aac",
             "-f", format,
             "-y",
-            output_path.to_str().unwrap(),
+            &output_path.to_string_lossy(),
         ])
         .status()
         .map_err(|e| AetherError::MediaError(format!("Failed to run FFmpeg render: {}", e)))?;
@@ -305,15 +305,15 @@ pub fn composite_video(
 
         let status = std::process::Command::new("ffmpeg")
             .args([
-                "-i", base.path.to_str().unwrap(),
-                "-i", overlay.path.to_str().unwrap(),
+                "-i", &base.path.to_string_lossy(),
+                "-i", &overlay.path.to_string_lossy(),
                 "-filter_complex", &filter_str,
                 "-map", "[v]",
                 "-map", "0:a?",
                 "-c:v", "libx264",
                 "-c:a", "aac",
                 "-y",
-                output_path.to_str().unwrap(),
+                &output_path.to_string_lossy(),
             ])
             .status()
             .map_err(|e| AetherError::MediaError(format!("Failed to run FFmpeg composite: {}", e)))?;
@@ -365,7 +365,7 @@ mod tests {
                 "-c:a", "aac",
                 "-pix_fmt", "yuv420p",
                 "-y",
-                output_path.to_str().unwrap(),
+                &output_path.to_string_lossy(),
             ])
             .status()
             .expect("Failed to run FFmpeg synthetic source generator");

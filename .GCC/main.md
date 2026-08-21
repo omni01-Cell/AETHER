@@ -7,9 +7,11 @@
 - [2026-07-02] Configuration auto-review et auto-merge (Jules & Husky) complétée et vérifiée.
 
 ## Objective
-Plan et implémentation SOTA des fonctionnalités manquantes d'AETHER identifiées dans `fonctionnalites_manquantes_aether.md` : moteur de layout fluide (taffy), expression engine (evalexpr), automatisation sémantique audio/vidéo (detect-cuts, strip-silence), design tokens, colorimétrie avancée, bus audio, et enrichissement du compositing.
+Exhaustive, forensic-grade security, correctness, and architecture audit of the entire codebase and zero-tolerance remediation of detected defects.
 
 ## Decisions made
+- [2026-08-21] Forensic audit: Fixed unsafe type assertion `as unknown as Blob` in `services/aether-api-bridge/src/providers/openai-image-edit.ts` using native Node.js Blob construction.
+- [2026-08-21] Forensic audit: Fixed thread panic hazards (`.to_str().unwrap()`) on non-UTF8 Path objects across `aether-video`, `aether-audio`, and `aether-cli`.
 - [2025-06-02] Architecture: system.md + model JSON files for prompt injection (not external files at runtime)
 - [2025-06-02] Bridge pattern: TypeScript bridge handles API calls, Rust handles orchestration
 - [2025-06-02] Video providers: Kling 3.0 (Kuaishou) as primary for VideoText/VideoFrame, Seedance 2.0 (ByteDance) for VideoIngredients/VideoEdit
@@ -33,7 +35,7 @@ Plan et implémentation SOTA des fonctionnalités manquantes d'AETHER identifié
 - ✅ Done: Phase 1 (Automatisation Sémantique: detect-cuts, strip-silence, analyze-color)
 - ✅ Done: Phase 2 (Moteur de disposition Taffy v0.10.1)
 - ✅ Done: Phase 3 (Design Tokens & Thèmes: SQLite persistence, CLI parsing, daemon resolution)
-- ✅ Done: Configuration auto-review & auto-merge
+- ✅ Done: Forensic codebase security & panic-hazard audit and remediation
 - 🔄 In progress: Phase 4 & Implémentation Premiere Pro — ⏳ En attente de l'approbation de l'utilisateur pour le plan d'implémentation
 - ⏳ Pending: Implémentation des phases 5 à 7 (Colorimétrie, Calques d'ajustement, Proxies, Queue)
 

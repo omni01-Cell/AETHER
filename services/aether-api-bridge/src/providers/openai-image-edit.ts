@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import { toFile } from "openai";
 import type { BridgeArtifact, BridgeFailure, BridgeSuccess } from "../protocol.js";
 import { bridgeError } from "../protocol.js";
 
@@ -81,19 +80,13 @@ export async function runOpenAiImageEdit(args: {
 
   const params = parseParams(args.options);
     try {
-    const imageFiles = await Promise.all(
-      args.input_image_paths.map((p, i) =>
-        toFile(fs.createReadStream(p), path.basename(p), {
-          type: mimeFromPath(p),
-        }).then((f) => ({ index: i, file: f }))
-      )
-    );
-
     const form = new FormData();
     form.append("model", params.api_model);
     form.append("prompt", args.prompt);
-    for (const { file } of imageFiles) {
-      form.append("image[]", file as unknown as Blob);
+    for (const p of args.input_image_paths) {
+      const buffer = fs.readFileSync(p);
+      const blob = new Blob([buffer], { type: mimeFromPath(p) });
+      form.append("image[]", blob, path.basename(p));
     }
     form.append("quality", params.quality);
     form.append("size", params.size);
@@ -106,12 +99,9 @@ export async function runOpenAiImageEdit(args: {
       form.append("output_compression", String(params.output_compression));
     }
     if (params.mask_path) {
-      const maskFile = await toFile(
-        fs.createReadStream(params.mask_path),
-        path.basename(params.mask_path),
-        { type: mimeFromPath(params.mask_path) }
-      );
-      form.append("mask", maskFile as unknown as Blob);
+      const maskBuffer = fs.readFileSync(params.mask_path);
+      const maskBlob = new Blob([maskBuffer], { type: mimeFromPath(params.mask_path) });
+      form.append("mask", maskBlob, path.basename(params.mask_path));
     }
 
     const httpRes = await fetch("https://api.openai.com/v1/images/edits", {

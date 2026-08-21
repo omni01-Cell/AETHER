@@ -52,7 +52,7 @@ pub fn get_audio_metadata<P: AsRef<Path>>(path: P) -> Result<serde_json::Value, 
                 "-v", "error",
                 "-show_entries", "format=duration",
                 "-of", "default=noprint_wrappers=1:nokey=1",
-                p.to_str().unwrap(),
+                &p.to_string_lossy(),
             ])
             .output()
             .map_err(|e| AetherError::MediaError(format!("Failed to run ffprobe: {}", e)))?;
@@ -144,10 +144,10 @@ pub fn trim_audio(
             .args([
                 "-ss", start,
                 "-to", end,
-                "-i", asset.path.to_str().unwrap(),
+                "-i", &asset.path.to_string_lossy(),
                 "-c:a", "pcm_s16le",
                 "-y",
-                output_path.to_str().unwrap(),
+                &output_path.to_string_lossy(),
             ])
             .status()
             .map_err(|e| AetherError::MediaError(format!("Failed to run FFmpeg trim audio: {}", e)))?;
@@ -194,12 +194,12 @@ pub fn normalize_audio(
         let filter_str = format!("loudnorm=I={:.1}:TP={:.1}", lufs, true_peak);
         let status = std::process::Command::new("ffmpeg")
             .args([
-                "-i", asset.path.to_str().unwrap(),
+                "-i", &asset.path.to_string_lossy(),
                 "-filter:a", &filter_str,
                 "-ar", &sample_rate.to_string(),
                 "-c:a", "pcm_s16le",
                 "-y",
-                output_path.to_str().unwrap(),
+                &output_path.to_string_lossy(),
             ])
             .status()
             .map_err(|e| AetherError::MediaError(format!("Failed to run FFmpeg loudnorm audio: {}", e)))?;
@@ -511,7 +511,7 @@ mod tests {
                 "-i", "sine=duration=2:frequency=1000",
                 "-c:a", "pcm_s16le",
                 "-y",
-                output_path.to_str().unwrap(),
+                &output_path.to_string_lossy(),
             ])
             .status()
             .expect("Failed to run FFmpeg synthetic audio generator");
