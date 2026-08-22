@@ -616,6 +616,21 @@ mod tests {
     }
 
     #[test]
+    fn test_compressor_zero_ratio_safety() {
+        let sample_rate = 44100;
+        let mut samples = vec![vec![2.0; 100]];
+
+        // Passing ratio = 0.0 should be clamped to 1.0 and NOT result in NaN values
+        let mut compressor = dsp::DynamicCompressor::new(-6.0, 0.0, 1.0, 100.0, sample_rate, 1);
+        compressor.process(&mut samples);
+
+        for sample in &samples[0] {
+            assert!(!sample.is_nan(), "Sample should not be NaN");
+            assert!(!sample.is_infinite(), "Sample should not be infinite");
+        }
+    }
+
+    #[test]
     fn test_multitrack_mixing_pan() {
         let track1 = vec![vec![1.0; 1000]];
         let track2 = vec![vec![2.0; 1000]];

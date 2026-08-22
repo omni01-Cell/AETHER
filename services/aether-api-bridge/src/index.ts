@@ -41,10 +41,11 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (req.operation === "image_edit") {
+  const opsWithOutputDir = ["image_edit", "video_generate", "voice_generate", "music_generate"];
+  if (opsWithOutputDir.includes(req.operation)) {
     if (!req.output_dir) {
       writeResponse(
-        bridgeError("bridge", "image_edit requires output_dir", false)
+        bridgeError("bridge", `${req.operation} requires output_dir`, false)
       );
       process.exit(1);
       return;
