@@ -170,13 +170,8 @@ impl KeyframeTrack<f32> {
             return self.keyframes[last_idx].value;
         }
 
-        let mut idx = 0;
-        for i in 0..last_idx {
-            if time_ms >= self.keyframes[i].time_ms && time_ms <= self.keyframes[i+1].time_ms {
-                idx = i;
-                break;
-            }
-        }
+        // Optimization (Bolt): Use binary search (partition_point) to locate keyframe segment in O(log N) instead of O(N) linear scan.
+        let idx = self.keyframes.partition_point(|k| k.time_ms <= time_ms).saturating_sub(1);
 
         let kf0 = &self.keyframes[idx];
         let kf1 = &self.keyframes[idx + 1];
