@@ -229,11 +229,16 @@ impl BridgeGenerationProvider {
             })
             .unwrap_or_default();
 
-        if input_paths.is_empty() {
-            return Err(AetherError::OperationFailed(
-                "Bridge image_edit requires options.input_asset_paths (absolute file paths)"
-                    .to_string(),
-            ));
+        let requires_inputs = matches!(
+            request.kind,
+            GenerationKind::ImageEdit | GenerationKind::VideoEdit | GenerationKind::VoiceClone
+        );
+
+        if requires_inputs && input_paths.is_empty() {
+            return Err(AetherError::OperationFailed(format!(
+                "Bridge operation {:?} requires options.input_asset_paths (absolute file paths)",
+                request.kind
+            )));
         }
 
         let bridge_handler = request
@@ -291,21 +296,43 @@ impl BridgeGenerationProvider {
         }
     }
 
+    fn infer_artifact_kind(mime_type: &str, path: &Path) -> GeneratedArtifactKind {
+        if mime_type.starts_with("video/") {
+            GeneratedArtifactKind::Video
+        } else if mime_type.starts_with("audio/") {
+            GeneratedArtifactKind::Audio
+        } else if mime_type.starts_with("image/") {
+            GeneratedArtifactKind::Image
+        } else {
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+            match ext.as_str() {
+                "mp4" | "webm" | "mov" | "mkv" | "avi" => GeneratedArtifactKind::Video,
+                "mp3" | "wav" | "flac" | "ogg" | "aac" | "m4a" => GeneratedArtifactKind::Audio,
+                "png" | "jpg" | "jpeg" | "webp" => GeneratedArtifactKind::Image,
+                _ => GeneratedArtifactKind::Image,
+            }
+        }
+    }
+
     fn artifacts_from_success(&self, success: &BridgeSuccess) -> Vec<GenerationArtifact> {
         success
             .artifacts
             .iter()
-            .map(|a| GenerationArtifact {
-                kind: GeneratedArtifactKind::Image,
-                path: PathBuf::from(&a.path),
-                asset_ref: None,
-                mime_type: Some(a.mime_type.clone()),
-                metadata: serde_json::json!({
-                    "provider": success.provider,
-                    "bridge": true,
-                    "provider_metadata": success.metadata,
-                    "artifact_metadata": a.metadata,
-                }),
+            .map(|a| {
+                let path = PathBuf::from(&a.path);
+                let kind = Self::infer_artifact_kind(&a.mime_type, &path);
+                GenerationArtifact {
+                    kind,
+                    path,
+                    asset_ref: None,
+                    mime_type: Some(a.mime_type.clone()),
+                    metadata: serde_json::json!({
+                        "provider": success.provider,
+                        "bridge": true,
+                        "provider_metadata": success.metadata,
+                        "artifact_metadata": a.metadata,
+                    }),
+                }
             })
             .collect()
     }
@@ -385,5 +412,66 @@ impl GenerationProvider for BridgeGenerationProvider {
 
     fn cancel(&self, _job: &GenerationJob) -> Result<(), AetherError> {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aether_core::{GenerationKind, Ref, RefKind};
+
+    #[test]
+    fn test_bridge_request_building_without_inputs_for_text_video() {
+        let provider = BridgeGenerationProvider {
+            bridge_script: PathBuf::from("/tmp/dummy_bridge.js"),
+            output_dir: PathBuf::from("/tmp/out"),
+        };
+
+        let req = GenerationRequest {
+            job_ref: Ref { kind: RefKind::Generated, id: 1 },
+            kind: GenerationKind::VideoText,
+            user_request: "A serene waterfall".to_string(),
+            model: Some("kling/standard".to_string()),
+            inputs: Vec::new(),
+            options: serde_json::json!({
+                "bridge_handler": "kling-video"
+            }),
+        };
+
+        let model = ProviderModel {
+            id: "kling/standard".to_string(),
+            provider: "kuaishou".to_string(),
+            kind: GenerationKind::VideoText,
+            enabled: true,
+            capabilities: serde_json::json!({
+                "bridge_handler": "kling-video"
+            }),
+        };
+
+        let bridge_req = provider.build_request(&req, &model, "A serene waterfall").unwrap();
+        assert_eq!(bridge_req.operation, "video_generate");
+        assert_eq!(bridge_req.prompt, "A serene waterfall");
+        assert!(bridge_req.input_image_paths.is_empty());
+    }
+
+    #[test]
+    fn test_infer_artifact_kind() {
+        let path_mp4 = Path::new("/tmp/test.mp4");
+        assert_eq!(
+            BridgeGenerationProvider::infer_artifact_kind("video/mp4", path_mp4),
+            GeneratedArtifactKind::Video
+        );
+
+        let path_wav = Path::new("/tmp/test.wav");
+        assert_eq!(
+            BridgeGenerationProvider::infer_artifact_kind("audio/wav", path_wav),
+            GeneratedArtifactKind::Audio
+        );
+
+        let path_png = Path::new("/tmp/test.png");
+        assert_eq!(
+            BridgeGenerationProvider::infer_artifact_kind("image/png", path_png),
+            GeneratedArtifactKind::Image
+        );
     }
 }

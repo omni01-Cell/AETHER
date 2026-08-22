@@ -70,11 +70,15 @@ impl DynamicCompressor {
         sample_rate: u32,
         channels: usize,
     ) -> Self {
+        let safe_ratio = ratio.max(1.0);
+        let safe_attack_ms = attack_ms.max(0.1);
+        let safe_release_ms = release_ms.max(0.1);
+
         DynamicCompressor {
             threshold_db,
-            ratio,
-            attack_s: attack_ms / 1000.0,
-            release_s: release_ms / 1000.0,
+            ratio: safe_ratio,
+            attack_s: safe_attack_ms / 1000.0,
+            release_s: safe_release_ms / 1000.0,
             sample_rate: sample_rate as f32,
             envelope: vec![0.0; channels],
         }
