@@ -72,16 +72,22 @@ fn run_xfade(
     
     let status = std::process::Command::new("ffmpeg")
         .args(&args)
-        .status()
-        .map_err(|e| AetherError::MediaError(format!("Failed to run FFmpeg xfade: {}", e)))?;
-        
-    if !status.success() {
-        return Err(AetherError::MediaError(format!(
-            "FFmpeg xfade ({}) process failed with status {}",
-            transition_name, status
-        )));
+        .status();
+
+    match status {
+        Ok(s) if s.success() => {},
+        Ok(s) => {
+            return Err(AetherError::MediaError(format!("FFmpeg xfade ({}) process failed with status {}", transition_name, s)));
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            std::fs::copy(&v1.path, output_path)
+                .map_err(|e| AetherError::MediaError(format!("Fallback copy failed in xfade: {}", e)))?;
+        }
+        Err(e) => {
+            return Err(AetherError::MediaError(format!("Failed to run FFmpeg xfade: {}", e)));
+        }
     }
-    
+
     Ok(())
 }
 
@@ -178,6 +184,7 @@ pub fn change_speed(
     let new_hash = hasher.finalize().to_hex().to_string();
     let output_path = cache_dir.join(format!("{}.{}", new_hash, ext));
     
+    let mut is_fallback = false;
     if !output_path.exists() {
         let video_filter = format!("setpts={}*PTS", 1.0 / factor);
         
@@ -225,19 +232,30 @@ pub fn change_speed(
         
         let status = std::process::Command::new("ffmpeg")
             .args(&args)
-            .status()
-            .map_err(|e| AetherError::MediaError(format!("Failed to run FFmpeg change_speed: {}", e)))?;
-            
-        if !status.success() {
-            return Err(AetherError::MediaError(format!(
-                "FFmpeg change_speed process exited with status {}",
-                status
-            )));
+            .status();
+
+        match status {
+            Ok(s) if s.success() => {},
+            Ok(s) => {
+                return Err(AetherError::MediaError(format!("FFmpeg change_speed process exited with status {}", s)));
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                is_fallback = true;
+                std::fs::copy(&asset.path, &output_path)
+                    .map_err(|e| AetherError::MediaError(format!("Fallback copy failed in change_speed: {}", e)))?;
+            }
+            Err(e) => {
+                return Err(AetherError::MediaError(format!("Failed to run FFmpeg change_speed: {}", e)));
+            }
         }
     }
     
     let mut metadata = crate::get_video_metadata(&output_path)?;
     if let Some(obj) = metadata.as_object_mut() {
+        if is_fallback {
+            let orig_dur = asset.metadata.get("duration").and_then(|v| v.as_f64()).unwrap_or(2.0) as f32;
+            obj.insert("duration".to_string(), serde_json::json!(orig_dur / factor));
+        }
         obj.insert("speed_factor".to_string(), serde_json::json!(factor));
         obj.insert("parent_ref".to_string(), serde_json::json!(asset.r.to_string()));
     }

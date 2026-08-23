@@ -25,7 +25,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 clap = { version = "4.5", features = ["derive"] }
 rustyline = "14.0"
-ffmpeg-next = "7.0"
+ffmpeg-next = { version = "7.0", features = ["build"] }
 symphonia = { version = "0.5", features = ["all"] }
 hound = "3.5"
 rubato = "0.16"
