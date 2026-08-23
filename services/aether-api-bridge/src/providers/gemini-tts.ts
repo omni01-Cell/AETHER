@@ -33,8 +33,8 @@ function parseParams(options: Record<string, unknown> | undefined): GeminiTTSPar
       : o;
 
   return {
-    text: (cap.text as string) ?? DEFAULTS.text,
-    voice_name: (cap.voice_name as string) ?? DEFAULTS.voice_name,
+    text: typeof cap.text === "string" ? cap.text : DEFAULTS.text,
+    voice_name: typeof cap.voice_name === "string" ? cap.voice_name : DEFAULTS.voice_name,
     speaking_rate:
       typeof cap.speaking_rate === "number"
         ? cap.speaking_rate
@@ -58,7 +58,7 @@ export async function runGeminiTTS(args: {
     process.env.GEMINI_API_KEY ??
     process.env.GOOGLE_API_KEY;
 
-  if (!apiKey) {
+  if (!apiKey?.trim()) {
     return bridgeError(
       "gemini-tts",
       "Missing AETHER_GOOGLE_API_KEY, GEMINI_API_KEY, or GOOGLE_API_KEY",
@@ -67,7 +67,7 @@ export async function runGeminiTTS(args: {
   }
 
   const params = parseParams(args.options);
-  params.text = args.prompt || params.text;
+  params.text = args.prompt.trim() || params.text;
 
   if (!params.text) {
     return bridgeError("gemini-tts", "Text is required for TTS", false);
@@ -88,10 +88,9 @@ export async function runGeminiTTS(args: {
             },
           },
         },
-      } as Parameters<typeof ai.models.generateContent>[0]["config"],
+      } as Record<string, unknown>,
     });
 
-    // Extract audio from response
     for (const candidate of response.candidates ?? []) {
       for (const part of candidate.content?.parts ?? []) {
         if (part.inlineData?.data) {

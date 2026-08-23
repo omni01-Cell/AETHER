@@ -35,6 +35,19 @@ const DEFAULTS: NanoBananaImageEditParams = {
   search_grounding: false,
 };
 
+const VALID_PERSON_GEN: ReadonlySet<string> = new Set([
+  "dont_allow",
+  "allow_adult",
+  "allow_all",
+]);
+
+const VALID_THINKING_LEVELS: ReadonlySet<string> = new Set([
+  "minimal",
+  "low",
+  "medium",
+  "high",
+]);
+
 function parseParams(options: Record<string, unknown> | undefined): NanoBananaImageEditParams {
   const o = options ?? {};
   const cap =
@@ -42,23 +55,29 @@ function parseParams(options: Record<string, unknown> | undefined): NanoBananaIm
       ? (o.google as Record<string, unknown>)
       : o;
 
-  const thinking = cap.thinking_level ?? cap.reasoning_effort;
-  const imageSize = cap.image_size ?? cap.resolution;
+  const thinkingStr = typeof cap.thinking_level === "string" ? cap.thinking_level : (typeof cap.reasoning_effort === "string" ? cap.reasoning_effort : "");
+  const thinking_level = VALID_THINKING_LEVELS.has(thinkingStr)
+    ? (thinkingStr as NanoBananaImageEditParams["thinking_level"])
+    : DEFAULTS.thinking_level;
+
+  const personGenStr = typeof cap.person_generation === "string" ? cap.person_generation : "";
+  const person_generation = VALID_PERSON_GEN.has(personGenStr)
+    ? (personGenStr as NanoBananaImageEditParams["person_generation"])
+    : DEFAULTS.person_generation;
+
+  const imageSize = typeof cap.image_size === "string" ? cap.image_size : (typeof cap.resolution === "string" ? cap.resolution : DEFAULTS.image_size);
 
   return {
-    api_model: (cap.api_model as string) ?? DEFAULTS.api_model,
-    aspect_ratio: (cap.aspect_ratio as string) ?? DEFAULTS.aspect_ratio,
-    image_size: (imageSize as string) ?? DEFAULTS.image_size,
-    person_generation:
-      (cap.person_generation as NanoBananaImageEditParams["person_generation"]) ??
-      DEFAULTS.person_generation,
+    api_model: typeof cap.api_model === "string" ? cap.api_model : DEFAULTS.api_model,
+    aspect_ratio: typeof cap.aspect_ratio === "string" ? cap.aspect_ratio : DEFAULTS.aspect_ratio,
+    image_size: imageSize,
+    person_generation,
     temperature:
       typeof cap.temperature === "number" ? cap.temperature : DEFAULTS.temperature,
     top_p: typeof cap.top_p === "number" ? cap.top_p : DEFAULTS.top_p,
-    thinking_level:
-      (thinking as NanoBananaImageEditParams["thinking_level"]) ?? DEFAULTS.thinking_level,
+    thinking_level,
     number_of_images:
-      typeof cap.number_of_images === "number"
+      typeof cap.number_of_images === "number" && cap.number_of_images > 0
         ? cap.number_of_images
         : DEFAULTS.number_of_images,
     seed: typeof cap.seed === "number" ? cap.seed : undefined,
@@ -88,7 +107,7 @@ export async function runNanoBananaImageEdit(args: {
     process.env.AETHER_GOOGLE_API_KEY ??
     process.env.GEMINI_API_KEY ??
     process.env.GOOGLE_API_KEY;
-  if (!apiKey) {
+  if (!apiKey?.trim()) {
     return bridgeError(
       "nano-banana",
       "Missing AETHER_GOOGLE_API_KEY, GEMINI_API_KEY, or GOOGLE_API_KEY",
@@ -109,6 +128,12 @@ export async function runNanoBananaImageEdit(args: {
       "Nano Banana supports at most 14 reference images",
       false
     );
+  }
+
+  for (const p of args.input_image_paths) {
+    if (!fs.existsSync(p)) {
+      return bridgeError("nano-banana", `Input image path does not exist: ${p}`, false);
+    }
   }
 
   const params = parseParams(args.options);
@@ -143,7 +168,7 @@ export async function runNanoBananaImageEdit(args: {
     const response = await ai.models.generateContent({
       model: params.api_model,
       contents: [{ role: "user", parts }],
-      config: config as Parameters<typeof ai.models.generateContent>[0]["config"],
+      config: config as Record<string, unknown>,
     });
 
     const artifacts: BridgeArtifact[] = [];

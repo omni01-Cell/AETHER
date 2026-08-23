@@ -19,7 +19,9 @@ export async function runOpenAiChat(req: BridgeRequest): Promise<BridgeResponse>
     model: apiModel,
     messages,
     ...(req.tools ? { tools: req.tools, tool_choice: "auto" } : {}),
-    ...(req.options?.temperature != null ? { temperature: req.options.temperature } : {}),
+    ...(req.options?.temperature != null && typeof req.options.temperature === "number"
+      ? { temperature: req.options.temperature }
+      : {}),
   };
 
   let res: Response;

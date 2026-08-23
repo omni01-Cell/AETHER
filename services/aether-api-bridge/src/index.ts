@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 import fs from "node:fs";
-import type { BridgeRequest, BridgeResponse } from "./protocol.js";
-import { BRIDGE_VERSION, bridgeError } from "./protocol.js";
+import type { BridgeResponse } from "./protocol.js";
+import { BRIDGE_VERSION, bridgeError, isBridgeRequest } from "./protocol.js";
 import { dispatch } from "./router.js";
 
 async function readStdin(): Promise<string> {
-  const chunks: Buffer[] = [];
+  const chunks: Uint8Array[] = [];
   for await (const chunk of process.stdin) {
-    chunks.push(chunk as Buffer);
+    chunks.push(chunk as Uint8Array);
   }
   return Buffer.concat(chunks).toString("utf8");
 }
@@ -24,14 +24,28 @@ async function main(): Promise<void> {
     return;
   }
 
-  let req: BridgeRequest;
+  let parsed: unknown;
   try {
-    req = JSON.parse(raw) as BridgeRequest;
+    parsed = JSON.parse(raw);
   } catch {
     writeResponse(bridgeError("bridge", "Invalid JSON on stdin", false));
     process.exit(1);
     return;
   }
+
+  if (!isBridgeRequest(parsed)) {
+    writeResponse(
+      bridgeError(
+        "bridge",
+        "Schema validation failed: Invalid BridgeRequest structure on stdin",
+        false
+      )
+    );
+    process.exit(1);
+    return;
+  }
+
+  const req = parsed;
 
   if (req.version !== BRIDGE_VERSION) {
     writeResponse(
@@ -41,10 +55,15 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (req.operation === "image_edit") {
-    if (!req.output_dir) {
+  if (
+    req.operation === "image_edit" ||
+    req.operation === "video_generate" ||
+    req.operation === "voice_generate" ||
+    req.operation === "music_generate"
+  ) {
+    if (!req.output_dir?.trim()) {
       writeResponse(
-        bridgeError("bridge", "image_edit requires output_dir", false)
+        bridgeError("bridge", `${req.operation} requires output_dir`, false)
       );
       process.exit(1);
       return;
@@ -56,7 +75,7 @@ async function main(): Promise<void> {
         writeResponse(
           bridgeError(
             "bridge",
-            `Cannot create output_dir: ${req.output_dir} (${e})`,
+            `Cannot create output_dir: ${req.output_dir} (${e instanceof Error ? e.message : String(e)})`,
             false
           )
         );
