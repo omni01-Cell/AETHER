@@ -32,12 +32,15 @@ function parseParams(options: Record<string, unknown> | undefined): OpenAITTSPar
       : o;
 
   return {
-    text: (cap.text as string) ?? DEFAULTS.text,
-    model: (cap.model as string) ?? DEFAULTS.model,
-    voice: (cap.voice as string) ?? DEFAULTS.voice,
+    text: typeof cap.text === "string" ? cap.text : DEFAULTS.text,
+    model: typeof cap.model === "string" ? cap.model : DEFAULTS.model,
+    voice: typeof cap.voice === "string" ? cap.voice : DEFAULTS.voice,
     response_format:
-      (cap.response_format as string) ?? DEFAULTS.response_format,
-    speed: typeof cap.speed === "number" ? cap.speed : DEFAULTS.speed,
+      typeof cap.response_format === "string" ? cap.response_format : DEFAULTS.response_format,
+    speed:
+      typeof cap.speed === "number" && cap.speed >= 0.25 && cap.speed <= 4.0
+        ? cap.speed
+        : DEFAULTS.speed,
   };
 }
 
@@ -48,12 +51,12 @@ export async function runOpenAITTS(args: {
   options?: Record<string, unknown>;
 }): Promise<BridgeSuccess | BridgeFailure> {
   const apiKey = process.env.AETHER_OPENAI_API_KEY ?? process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    return bridgeError("openai-tts", "Missing OPENAI_API_KEY", false);
+  if (!apiKey?.trim()) {
+    return bridgeError("openai-tts", "Missing OPENAI_API_KEY or AETHER_OPENAI_API_KEY", false);
   }
 
   const params = parseParams(args.options);
-  params.text = args.prompt || params.text;
+  params.text = args.prompt.trim() || params.text;
 
   if (!params.text) {
     return bridgeError("openai-tts", "Text is required for TTS", false);

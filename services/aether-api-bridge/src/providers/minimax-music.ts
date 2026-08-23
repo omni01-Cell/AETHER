@@ -37,14 +37,31 @@ function parseParams(options: Record<string, unknown> | undefined): MiniMaxMusic
       ? (o.minimax as Record<string, unknown>)
       : o;
 
+  const audioSetRaw =
+    typeof cap.audio_setting === "object" && cap.audio_setting !== null
+      ? (cap.audio_setting as Record<string, unknown>)
+      : {};
+
+  const audio_setting = {
+    sample_rate:
+      typeof audioSetRaw.sample_rate === "number" && audioSetRaw.sample_rate > 0
+        ? audioSetRaw.sample_rate
+        : DEFAULTS.audio_setting.sample_rate,
+    bitrate:
+      typeof audioSetRaw.bitrate === "number" && audioSetRaw.bitrate > 0
+        ? audioSetRaw.bitrate
+        : DEFAULTS.audio_setting.bitrate,
+    format:
+      typeof audioSetRaw.format === "string"
+        ? audioSetRaw.format
+        : DEFAULTS.audio_setting.format,
+  };
+
   return {
-    prompt: (cap.prompt as string) ?? DEFAULTS.prompt,
-    lyrics: (cap.lyrics as string) ?? DEFAULTS.lyrics,
-    duration: typeof cap.duration === "number" ? cap.duration : DEFAULTS.duration,
-    audio_setting:
-      typeof cap.audio_setting === "object" && cap.audio_setting !== null
-        ? (cap.audio_setting as MiniMaxMusicParams["audio_setting"])
-        : DEFAULTS.audio_setting,
+    prompt: typeof cap.prompt === "string" ? cap.prompt : DEFAULTS.prompt,
+    lyrics: typeof cap.lyrics === "string" ? cap.lyrics : DEFAULTS.lyrics,
+    duration: typeof cap.duration === "number" && cap.duration > 0 ? cap.duration : DEFAULTS.duration,
+    audio_setting,
   };
 }
 
@@ -55,7 +72,7 @@ export async function runMiniMaxMusic(args: {
   options?: Record<string, unknown>;
 }): Promise<BridgeSuccess | BridgeFailure> {
   const apiKey = process.env.FAL_API_KEY ?? process.env.MINIMAX_API_KEY;
-  if (!apiKey) {
+  if (!apiKey?.trim()) {
     return bridgeError(
       "minimax-music",
       "Missing FAL_API_KEY or MINIMAX_API_KEY",
@@ -64,14 +81,13 @@ export async function runMiniMaxMusic(args: {
   }
 
   const params = parseParams(args.options);
-  params.prompt = args.prompt || params.prompt;
+  params.prompt = args.prompt.trim() || params.prompt;
 
   if (!params.prompt) {
     return bridgeError("minimax-music", "Prompt is required for music generation", false);
   }
 
   try {
-    // Submit generation task via FAL.AI
     const submitRes = await fetch("https://fal.run/fal-ai/minimax-music/v2", {
       method: "POST",
       headers: {
@@ -105,7 +121,6 @@ export async function runMiniMaxMusic(args: {
       return bridgeError("minimax-music", "No request_id returned", true);
     }
 
-    // Poll for completion
     let status = "submitted";
     let audioUrl: string | null = null;
     const maxAttempts = 60;
@@ -116,7 +131,7 @@ export async function runMiniMaxMusic(args: {
       attempt++;
 
       const statusRes = await fetch(
-        `https://fal.run/fal-ai/minimax-music/v2/${requestId}`,
+        `https://fal.run/fal-ai/minimax-music/v2/${encodeURIComponent(requestId)}`,
         {
           headers: {
             Authorization: `Key ${apiKey}`,
@@ -148,7 +163,6 @@ export async function runMiniMaxMusic(args: {
       return bridgeError("minimax-music", "Music generation timed out", true);
     }
 
-    // Download the audio
     const audioRes = await fetch(audioUrl);
     if (!audioRes.ok) {
       return bridgeError(

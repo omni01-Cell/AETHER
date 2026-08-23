@@ -32,6 +32,8 @@ const DEFAULTS: KlingVideoParams = {
   multi_shots: false,
 };
 
+const VALID_MODES: ReadonlySet<string> = new Set(["std", "pro", "4k"]);
+
 function parseParams(
   options: Record<string, unknown> | undefined,
   prompt: string,
@@ -43,11 +45,16 @@ function parseParams(
       ? (o.kuaishou as Record<string, unknown>)
       : o;
 
+  const modeStr = typeof cap.mode === "string" ? cap.mode : "";
+  const mode = VALID_MODES.has(modeStr)
+    ? (modeStr as KlingVideoParams["mode"])
+    : DEFAULTS.mode;
+
   const params: KlingVideoParams = {
     prompt,
-    aspect_ratio: (cap.aspect_ratio as string) ?? DEFAULTS.aspect_ratio,
-    duration: typeof cap.duration === "number" ? cap.duration : DEFAULTS.duration,
-    mode: (cap.mode as KlingVideoParams["mode"]) ?? DEFAULTS.mode,
+    aspect_ratio: typeof cap.aspect_ratio === "string" ? cap.aspect_ratio : DEFAULTS.aspect_ratio,
+    duration: typeof cap.duration === "number" && cap.duration > 0 ? cap.duration : DEFAULTS.duration,
+    mode,
     generate_audio:
       typeof cap.generate_audio === "boolean"
         ? cap.generate_audio
@@ -58,7 +65,6 @@ function parseParams(
       typeof cap.multi_shots === "boolean" ? cap.multi_shots : DEFAULTS.multi_shots,
   };
 
-  // Image-to-video: first frame from input images
   if (inputImagePaths.length > 0) {
     params.first_frame = inputImagePaths[0];
     if (inputImagePaths.length > 1) {
@@ -78,6 +84,23 @@ function readImageAsBase64(filePath: string): { mimeType: string; data: string }
   return { mimeType, data };
 }
 
+interface KlingInputPayload {
+  prompt: string;
+  aspect_ratio: string;
+  duration: number;
+  generate_audio: boolean;
+  cfg_scale: number;
+  seed: number;
+  multi_shots: boolean;
+  negative_prompt: string;
+  image_urls?: string[];
+}
+
+interface KlingRequestBody {
+  model: string;
+  input: KlingInputPayload;
+}
+
 export async function runKlingVideo(args: {
   prompt: string;
   input_image_paths: string[];
@@ -88,7 +111,7 @@ export async function runKlingVideo(args: {
     process.env.AETHER_KUAISHOU_API_KEY ??
     process.env.KLING_API_KEY;
 
-  if (!apiKey) {
+  if (!apiKey?.trim()) {
     return bridgeError(
       "kling",
       "Missing AETHER_KUAISHOU_API_KEY or KLING_API_KEY",
@@ -96,40 +119,42 @@ export async function runKlingVideo(args: {
     );
   }
 
+  for (const p of args.input_image_paths) {
+    if (!fs.existsSync(p)) {
+      return bridgeError("kling", `Input image path does not exist: ${p}`, false);
+    }
+  }
+
   const params = parseParams(args.options, args.prompt, args.input_image_paths);
 
   try {
-    // Build request body for Kling API
-    const body: Record<string, unknown> = {
-      model: `kling-v3-${params.mode}`,
-      input: {
-        prompt: params.prompt,
-        aspect_ratio: params.aspect_ratio,
-        duration: params.duration,
-        generate_audio: params.generate_audio,
-        cfg_scale: params.cfg_scale,
-        seed: params.seed,
-        multi_shots: params.multi_shots,
-        negative_prompt: "blur, distort, and low quality",
-      },
+    const inputPayload: KlingInputPayload = {
+      prompt: params.prompt,
+      aspect_ratio: params.aspect_ratio,
+      duration: params.duration,
+      generate_audio: params.generate_audio,
+      cfg_scale: params.cfg_scale,
+      seed: params.seed,
+      multi_shots: params.multi_shots,
+      negative_prompt: "blur, distort, and low quality",
     };
 
-    // Image-to-video mode
     if (params.first_frame) {
       const img = readImageAsBase64(params.first_frame);
-      (body.input as Record<string, unknown>).image_urls = [
-        `data:${img.mimeType};base64,${img.data}`,
-      ];
+      const imageUrls = [`data:${img.mimeType};base64,${img.data}`];
 
       if (params.last_frame) {
         const lastImg = readImageAsBase64(params.last_frame);
-        ((body.input as Record<string, unknown>).image_urls as string[]).push(
-          `data:${lastImg.mimeType};base64,${lastImg.data}`
-        );
+        imageUrls.push(`data:${lastImg.mimeType};base64,${lastImg.data}`);
       }
+      inputPayload.image_urls = imageUrls;
     }
 
-    // Submit generation task
+    const body: KlingRequestBody = {
+      model: `kling-v3-${params.mode}`,
+      input: inputPayload,
+    };
+
     const submitRes = await fetch("https://api.klingai.com/v1/videos/generations", {
       method: "POST",
       headers: {
@@ -164,10 +189,9 @@ export async function runKlingVideo(args: {
 
     const taskId = submitData.data.task_id;
 
-    // Poll for completion
     let status = "submitted";
     let videoUrl: string | null = null;
-    const maxAttempts = 120; // 10 minutes max (5s intervals)
+    const maxAttempts = 120;
     let attempt = 0;
 
     while (attempt < maxAttempts) {
@@ -219,7 +243,6 @@ export async function runKlingVideo(args: {
       );
     }
 
-    // Download the video
     const videoRes = await fetch(videoUrl);
     if (!videoRes.ok) {
       return bridgeError(

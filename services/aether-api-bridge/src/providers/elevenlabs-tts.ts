@@ -36,9 +36,9 @@ function parseParams(options: Record<string, unknown> | undefined): ElevenLabsTT
       : o;
 
   return {
-    text: (cap.text as string) ?? DEFAULTS.text,
-    model_id: (cap.model_id as string) ?? DEFAULTS.model_id,
-    voice_id: (cap.voice_id as string) ?? DEFAULTS.voice_id,
+    text: typeof cap.text === "string" ? cap.text : DEFAULTS.text,
+    model_id: typeof cap.model_id === "string" ? cap.model_id : DEFAULTS.model_id,
+    voice_id: typeof cap.voice_id === "string" ? cap.voice_id : DEFAULTS.voice_id,
     stability: typeof cap.stability === "number" ? cap.stability : DEFAULTS.stability,
     similarity_boost:
       typeof cap.similarity_boost === "number"
@@ -46,7 +46,7 @@ function parseParams(options: Record<string, unknown> | undefined): ElevenLabsTT
         : DEFAULTS.similarity_boost,
     style: typeof cap.style === "number" ? cap.style : DEFAULTS.style,
     output_format:
-      (cap.output_format as string) ?? DEFAULTS.output_format,
+      typeof cap.output_format === "string" ? cap.output_format : DEFAULTS.output_format,
   };
 }
 
@@ -57,7 +57,7 @@ export async function runElevenLabsTTS(args: {
   options?: Record<string, unknown>;
 }): Promise<BridgeSuccess | BridgeFailure> {
   const apiKey = process.env.ELEVENLABS_API_KEY;
-  if (!apiKey) {
+  if (!apiKey?.trim()) {
     return bridgeError(
       "elevenlabs",
       "Missing ELEVENLABS_API_KEY",
@@ -66,14 +66,14 @@ export async function runElevenLabsTTS(args: {
   }
 
   const params = parseParams(args.options);
-  params.text = args.prompt || params.text;
+  params.text = args.prompt.trim() || params.text;
 
   if (!params.text) {
     return bridgeError("elevenlabs", "Text is required for TTS", false);
   }
 
   try {
-    const url = `https://api.elevenlabs.io/v1/text-to-speech/${params.voice_id}`;
+    const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(params.voice_id)}`;
     const body = {
       text: params.text,
       model_id: params.model_id,

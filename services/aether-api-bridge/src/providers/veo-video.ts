@@ -34,9 +34,9 @@ function parseParams(
 
   return {
     prompt,
-    aspect_ratio: (cap.aspect_ratio as string) ?? DEFAULTS.aspect_ratio,
+    aspect_ratio: typeof cap.aspect_ratio === "string" ? cap.aspect_ratio : DEFAULTS.aspect_ratio,
     duration_sec:
-      typeof cap.duration_sec === "number"
+      typeof cap.duration_sec === "number" && cap.duration_sec > 0
         ? cap.duration_sec
         : DEFAULTS.duration_sec,
     negative_prompt:
@@ -57,7 +57,7 @@ export async function runVeoVideo(args: {
     process.env.GEMINI_API_KEY ??
     process.env.GOOGLE_API_KEY;
 
-  if (!apiKey) {
+  if (!apiKey?.trim()) {
     return bridgeError(
       "veo",
       "Missing AETHER_GOOGLE_API_KEY, GEMINI_API_KEY, or GOOGLE_API_KEY",
@@ -65,12 +65,17 @@ export async function runVeoVideo(args: {
     );
   }
 
+  for (const p of args.input_image_paths) {
+    if (!fs.existsSync(p)) {
+      return bridgeError("veo", `Input image path does not exist: ${p}`, false);
+    }
+  }
+
   const params = parseParams(args.options, args.prompt);
 
   try {
     const ai = new GoogleGenAI({ apiKey });
 
-    // Build config for Veo
     const config: Record<string, unknown> = {
       aspectRatio: params.aspect_ratio,
       durationSec: params.duration_sec,
@@ -80,7 +85,6 @@ export async function runVeoVideo(args: {
       config.negativePrompt = params.negative_prompt;
     }
 
-    // If we have input images, use image-to-video
     if (args.input_image_paths.length > 0) {
       const imageParts = args.input_image_paths.map((p) => {
         const data = fs.readFileSync(p).toString("base64");
@@ -94,10 +98,9 @@ export async function runVeoVideo(args: {
       const response = await ai.models.generateContent({
         model: "veo-3.1",
         contents: [{ role: "user", parts: [...imageParts, { text: params.prompt }] }],
-        config: config as Parameters<typeof ai.models.generateContent>[0]["config"],
+        config: config as Record<string, unknown>,
       });
 
-      // Extract video from response
       const artifacts: BridgeArtifact[] = [];
       for (const candidate of response.candidates ?? []) {
         for (const part of candidate.content?.parts ?? []) {
@@ -141,14 +144,12 @@ export async function runVeoVideo(args: {
       };
     }
 
-    // Text-to-video mode
     const response = await ai.models.generateContent({
       model: "veo-3.1",
       contents: [{ role: "user", parts: [{ text: params.prompt }] }],
-      config: config as Parameters<typeof ai.models.generateContent>[0]["config"],
+      config: config as Record<string, unknown>,
     });
 
-    // Extract video from response
     const artifacts: BridgeArtifact[] = [];
     for (const candidate of response.candidates ?? []) {
       for (const part of candidate.content?.parts ?? []) {
