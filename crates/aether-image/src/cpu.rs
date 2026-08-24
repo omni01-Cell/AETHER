@@ -182,71 +182,137 @@ impl RenderBackend for CpuBackend {
     }
 }
 
+/// Applies a two-pass separable box blur to the given pixmap.
+///
+/// OPTIMIZATION: Uses an O(1) per-pixel sliding window algorithm with integer accumulators.
+/// Previously, for every pixel, the filter iterated `2r + 1` times per channel across both passes,
+/// yielding O(W * H * r) complexity. The sliding window reduces per-pixel updates to a single
+/// subtraction and addition, achieving O(W * H) complexity independent of blur radius `r`.
 fn apply_box_blur(pixmap: &mut Pixmap, radius: f32) {
     let r = radius.round() as i32;
     if r <= 0 { return; }
     
     let w = pixmap.width() as i32;
     let h = pixmap.height() as i32;
+    if w <= 0 || h <= 0 { return; }
+
+    let count = (2 * r + 1) as u32;
     let pixels = pixmap.pixels().to_vec();
     let mut temp = pixels.clone();
     
-    // Horizontal blur pass
+    // Horizontal blur pass - O(1) per pixel sliding window
     for y in 0..h {
+        let row_offset = (y * w) as usize;
+
+        // Initialize sliding window accumulator for x = 0
+        let mut r_sum: u32 = 0;
+        let mut g_sum: u32 = 0;
+        let mut b_sum: u32 = 0;
+        let mut a_sum: u32 = 0;
+
+        for dx in -r..=r {
+            let nx = dx.clamp(0, w - 1) as usize;
+            let p = pixels[row_offset + nx];
+            r_sum += p.red() as u32;
+            g_sum += p.green() as u32;
+            b_sum += p.blue() as u32;
+            a_sum += p.alpha() as u32;
+        }
+
         for x in 0..w {
-            let mut r_sum = 0.0;
-            let mut g_sum = 0.0;
-            let mut b_sum = 0.0;
-            let mut a_sum = 0.0;
-            let mut count = 0.0;
-            
-            for dx in -r..=r {
-                let nx = (x + dx).clamp(0, w - 1);
-                let p = pixels[(y * w + nx) as usize];
-                r_sum += p.red() as f32;
-                g_sum += p.green() as f32;
-                b_sum += p.blue() as f32;
-                a_sum += p.alpha() as f32;
-                count += 1.0;
-            }
-            
-            let dest = &mut temp[(y * w + x) as usize];
-            *dest = tiny_skia::ColorU8::from_rgba(
+            temp[row_offset + x as usize] = tiny_skia::ColorU8::from_rgba(
                 (r_sum / count) as u8,
                 (g_sum / count) as u8,
                 (b_sum / count) as u8,
                 (a_sum / count) as u8,
             ).premultiply();
+
+            // Advance window to x + 1 by subtracting leaving pixel and adding entering pixel
+            let leaving_x = (x - r).clamp(0, w - 1) as usize;
+            let entering_x = (x + 1 + r).clamp(0, w - 1) as usize;
+
+            let p_leave = pixels[row_offset + leaving_x];
+            let p_enter = pixels[row_offset + entering_x];
+
+            r_sum = r_sum + p_enter.red() as u32 - p_leave.red() as u32;
+            g_sum = g_sum + p_enter.green() as u32 - p_leave.green() as u32;
+            b_sum = b_sum + p_enter.blue() as u32 - p_leave.blue() as u32;
+            a_sum = a_sum + p_enter.alpha() as u32 - p_leave.alpha() as u32;
         }
     }
     
-    // Vertical blur pass
+    // Vertical blur pass - O(1) per pixel sliding window
     let pixels_h = temp.clone();
     let pixels_mut = pixmap.pixels_mut();
+    let w_usize = w as usize;
+
     for x in 0..w {
+        let col_offset = x as usize;
+
+        // Initialize sliding window accumulator for y = 0
+        let mut r_sum: u32 = 0;
+        let mut g_sum: u32 = 0;
+        let mut b_sum: u32 = 0;
+        let mut a_sum: u32 = 0;
+
+        for dy in -r..=r {
+            let ny = dy.clamp(0, h - 1) as usize;
+            let p = pixels_h[ny * w_usize + col_offset];
+            r_sum += p.red() as u32;
+            g_sum += p.green() as u32;
+            b_sum += p.blue() as u32;
+            a_sum += p.alpha() as u32;
+        }
+
         for y in 0..h {
-            let mut r_sum = 0.0;
-            let mut g_sum = 0.0;
-            let mut b_sum = 0.0;
-            let mut a_sum = 0.0;
-            let mut count = 0.0;
-            
-            for dy in -r..=r {
-                let ny = (y + dy).clamp(0, h - 1);
-                let p = pixels_h[(ny * w + x) as usize];
-                r_sum += p.red() as f32;
-                g_sum += p.green() as f32;
-                b_sum += p.blue() as f32;
-                a_sum += p.alpha() as f32;
-                count += 1.0;
-            }
-            
-            pixels_mut[(y * w + x) as usize] = tiny_skia::ColorU8::from_rgba(
+            let cur_y = y as usize;
+            pixels_mut[cur_y * w_usize + col_offset] = tiny_skia::ColorU8::from_rgba(
                 (r_sum / count) as u8,
                 (g_sum / count) as u8,
                 (b_sum / count) as u8,
                 (a_sum / count) as u8,
             ).premultiply();
+
+            // Advance window to y + 1 by subtracting leaving pixel and adding entering pixel
+            let leaving_y = (y - r).clamp(0, h - 1) as usize;
+            let entering_y = (y + 1 + r).clamp(0, h - 1) as usize;
+
+            let p_leave = pixels_h[leaving_y * w_usize + col_offset];
+            let p_enter = pixels_h[entering_y * w_usize + col_offset];
+
+            r_sum = r_sum + p_enter.red() as u32 - p_leave.red() as u32;
+            g_sum = g_sum + p_enter.green() as u32 - p_leave.green() as u32;
+            b_sum = b_sum + p_enter.blue() as u32 - p_leave.blue() as u32;
+            a_sum = a_sum + p_enter.alpha() as u32 - p_leave.alpha() as u32;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_box_blur_correctness() {
+        let mut pixmap = Pixmap::new(5, 5).unwrap();
+        // Fill center pixel (2, 2) with white (255, 255, 255, 255)
+        let white = tiny_skia::ColorU8::from_rgba(255, 255, 255, 255).premultiply();
+        pixmap.pixels_mut()[2 * 5 + 2] = white;
+
+        // Apply blur with radius 1
+        apply_box_blur(&mut pixmap, 1.0);
+
+        // Radius 1 means 3x3 box window, box count = 3 * 3 = 9.
+        // Expected center pixel value after two 1D box passes = 255 / 9 = 28 (truncated integer arithmetic)
+        let center_pixel = pixmap.pixels()[2 * 5 + 2];
+        assert!(
+            center_pixel.red() > 0 && center_pixel.red() <= 30,
+            "Center pixel red channel expected around 28, got {}",
+            center_pixel.red()
+        );
+
+        // Check corner pixel (0, 0) remains black/transparent
+        let corner_pixel = pixmap.pixels()[0];
+        assert_eq!(corner_pixel.red(), 0);
     }
 }

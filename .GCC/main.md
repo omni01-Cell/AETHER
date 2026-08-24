@@ -10,6 +10,7 @@
 Plan et implémentation SOTA des fonctionnalités manquantes d'AETHER identifiées dans `fonctionnalites_manquantes_aether.md` : moteur de layout fluide (taffy), expression engine (evalexpr), automatisation sémantique audio/vidéo (detect-cuts, strip-silence), design tokens, colorimétrie avancée, bus audio, et enrichissement du compositing.
 
 ## Decisions made
+- [2026-08-24] Bolt: Optimized Box Blur Filter algorithm in `aether-image` from O(W * H * r) to O(W * H) using sliding window accumulator arithmetic.
 - [2025-06-02] Architecture: system.md + model JSON files for prompt injection (not external files at runtime)
 - [2025-06-02] Bridge pattern: TypeScript bridge handles API calls, Rust handles orchestration
 - [2025-06-02] Video providers: Kling 3.0 (Kuaishou) as primary for VideoText/VideoFrame, Seedance 2.0 (ByteDance) for VideoIngredients/VideoEdit
