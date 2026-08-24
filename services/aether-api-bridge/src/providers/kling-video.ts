@@ -43,11 +43,16 @@ function parseParams(
       ? (o.kuaishou as Record<string, unknown>)
       : o;
 
+  const validModes: Set<string> = new Set(["std", "pro", "4k"]);
+  const modeStr = typeof cap.mode === "string" ? cap.mode : "";
+
   const params: KlingVideoParams = {
     prompt,
-    aspect_ratio: (cap.aspect_ratio as string) ?? DEFAULTS.aspect_ratio,
+    aspect_ratio: typeof cap.aspect_ratio === "string" ? cap.aspect_ratio : DEFAULTS.aspect_ratio,
     duration: typeof cap.duration === "number" ? cap.duration : DEFAULTS.duration,
-    mode: (cap.mode as KlingVideoParams["mode"]) ?? DEFAULTS.mode,
+    mode: validModes.has(modeStr)
+      ? (modeStr as KlingVideoParams["mode"])
+      : DEFAULTS.mode,
     generate_audio:
       typeof cap.generate_audio === "boolean"
         ? cap.generate_audio
@@ -69,8 +74,9 @@ function parseParams(
   return params;
 }
 
-function readImageAsBase64(filePath: string): { mimeType: string; data: string } {
-  const data = fs.readFileSync(filePath).toString("base64");
+async function readImageAsBase64(filePath: string): Promise<{ mimeType: string; data: string }> {
+  const buffer = await fs.promises.readFile(filePath);
+  const data = buffer.toString("base64");
   const ext = path.extname(filePath).toLowerCase();
   let mimeType = "image/png";
   if (ext === ".jpg" || ext === ".jpeg") mimeType = "image/jpeg";
@@ -78,12 +84,58 @@ function readImageAsBase64(filePath: string): { mimeType: string; data: string }
   return { mimeType, data };
 }
 
-export async function runKlingVideo(args: {
-  prompt: string;
-  input_image_paths: string[];
-  output_dir: string;
-  options?: Record<string, unknown>;
-}): Promise<BridgeSuccess | BridgeFailure> {
+interface KlingSubmitResponse {
+  code: number;
+  data?: { task_id: string };
+  message?: string;
+}
+
+function isKlingSubmitResponse(val: unknown): val is KlingSubmitResponse {
+  if (typeof val !== "object" || val === null) return false;
+  const obj = val as Record<string, unknown>;
+  return typeof obj.code === "number";
+}
+
+interface KlingStatusResponse {
+  code: number;
+  data?: {
+    status: string;
+    task_result?: { videos?: Array<{ url: string }> };
+  };
+}
+
+function isKlingStatusResponse(val: unknown): val is KlingStatusResponse {
+  if (typeof val !== "object" || val === null) return false;
+  const obj = val as Record<string, unknown>;
+  return typeof obj.code === "number";
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      return reject(new Error("Polling aborted"));
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new Error("Polling aborted"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+export async function runKlingVideo(
+  args: {
+    prompt: string;
+    input_image_paths: string[];
+    output_dir: string;
+    options?: Record<string, unknown>;
+  },
+  abortSignal?: AbortSignal
+): Promise<BridgeSuccess | BridgeFailure> {
   const apiKey =
     process.env.AETHER_KUAISHOU_API_KEY ??
     process.env.KLING_API_KEY;
@@ -99,37 +151,37 @@ export async function runKlingVideo(args: {
   const params = parseParams(args.options, args.prompt, args.input_image_paths);
 
   try {
-    // Build request body for Kling API
-    const body: Record<string, unknown> = {
-      model: `kling-v3-${params.mode}`,
-      input: {
-        prompt: params.prompt,
-        aspect_ratio: params.aspect_ratio,
-        duration: params.duration,
-        generate_audio: params.generate_audio,
-        cfg_scale: params.cfg_scale,
-        seed: params.seed,
-        multi_shots: params.multi_shots,
-        negative_prompt: "blur, distort, and low quality",
-      },
-    };
-
-    // Image-to-video mode
+    const imageUrls: string[] = [];
     if (params.first_frame) {
-      const img = readImageAsBase64(params.first_frame);
-      (body.input as Record<string, unknown>).image_urls = [
-        `data:${img.mimeType};base64,${img.data}`,
-      ];
+      const img = await readImageAsBase64(params.first_frame);
+      imageUrls.push(`data:${img.mimeType};base64,${img.data}`);
 
       if (params.last_frame) {
-        const lastImg = readImageAsBase64(params.last_frame);
-        ((body.input as Record<string, unknown>).image_urls as string[]).push(
-          `data:${lastImg.mimeType};base64,${lastImg.data}`
-        );
+        const lastImg = await readImageAsBase64(params.last_frame);
+        imageUrls.push(`data:${lastImg.mimeType};base64,${lastImg.data}`);
       }
     }
 
-    // Submit generation task
+    const inputData: Record<string, unknown> = {
+      prompt: params.prompt,
+      aspect_ratio: params.aspect_ratio,
+      duration: params.duration,
+      generate_audio: params.generate_audio,
+      cfg_scale: params.cfg_scale,
+      seed: params.seed,
+      multi_shots: params.multi_shots,
+      negative_prompt: "blur, distort, and low quality",
+    };
+
+    if (imageUrls.length > 0) {
+      inputData.image_urls = imageUrls;
+    }
+
+    const body = {
+      model: `kling-v3-${params.mode}`,
+      input: inputData,
+    };
+
     const submitRes = await fetch("https://api.klingai.com/v1/videos/generations", {
       method: "POST",
       headers: {
@@ -137,6 +189,7 @@ export async function runKlingVideo(args: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
+      signal: abortSignal,
     });
 
     if (!submitRes.ok) {
@@ -148,21 +201,15 @@ export async function runKlingVideo(args: {
       );
     }
 
-    const submitData = (await submitRes.json()) as {
-      code: number;
-      data?: { task_id: string };
-      message?: string;
-    };
-
-    if (submitData.code !== 200 || !submitData.data?.task_id) {
-      return bridgeError(
-        "kling",
-        `Kling API error: ${submitData.message ?? "Unknown error"}`,
-        false
-      );
+    const submitJson: unknown = await submitRes.json();
+    if (!isKlingSubmitResponse(submitJson) || submitJson.code !== 200 || !submitJson.data?.task_id) {
+      const msg = isKlingSubmitResponse(submitJson)
+        ? submitJson.message ?? "Unknown error"
+        : "Invalid API response schema";
+      return bridgeError("kling", `Kling API error: ${msg}`, false);
     }
 
-    const taskId = submitData.data.task_id;
+    const taskId = submitJson.data.task_id;
 
     // Poll for completion
     let status = "submitted";
@@ -171,7 +218,7 @@ export async function runKlingVideo(args: {
     let attempt = 0;
 
     while (attempt < maxAttempts) {
-      await new Promise((resolve) => setTimeout(resolve, 5000));
+      await sleep(5000, abortSignal);
       attempt++;
 
       const statusRes = await fetch(
@@ -180,6 +227,7 @@ export async function runKlingVideo(args: {
           headers: {
             Authorization: `Bearer ${apiKey}`,
           },
+          signal: abortSignal,
         }
       );
 
@@ -187,22 +235,15 @@ export async function runKlingVideo(args: {
         continue;
       }
 
-      const statusData = (await statusRes.json()) as {
-        code: number;
-        data?: {
-          status: string;
-          task_result?: { videos?: Array<{ url: string }> };
-        };
-      };
-
-      if (statusData.code !== 200 || !statusData.data) {
+      const statusJson: unknown = await statusRes.json();
+      if (!isKlingStatusResponse(statusJson) || statusJson.code !== 200 || !statusJson.data) {
         continue;
       }
 
-      status = statusData.data.status;
+      status = statusJson.data.status;
 
-      if (status === "succeed" && statusData.data.task_result?.videos?.[0]) {
-        videoUrl = statusData.data.task_result.videos[0].url;
+      if (status === "succeed" && statusJson.data.task_result?.videos?.[0]) {
+        videoUrl = statusJson.data.task_result.videos[0].url;
         break;
       }
 
@@ -220,7 +261,7 @@ export async function runKlingVideo(args: {
     }
 
     // Download the video
-    const videoRes = await fetch(videoUrl);
+    const videoRes = await fetch(videoUrl, { signal: abortSignal });
     if (!videoRes.ok) {
       return bridgeError(
         "kling",
@@ -231,7 +272,7 @@ export async function runKlingVideo(args: {
 
     const videoBuffer = Buffer.from(await videoRes.arrayBuffer());
     const outPath = path.join(args.output_dir, `kling-${Date.now()}.mp4`);
-    fs.writeFileSync(outPath, videoBuffer);
+    await fs.promises.writeFile(outPath, videoBuffer);
 
     return {
       ok: true,
@@ -254,7 +295,7 @@ export async function runKlingVideo(args: {
         api: "POST /v1/videos/generations",
         model: params.mode,
         task_id: taskId,
-        params,
+        params: { ...params },
       },
     };
   } catch (err) {

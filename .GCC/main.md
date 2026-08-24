@@ -7,7 +7,7 @@
 - [2026-07-02] Configuration auto-review et auto-merge (Jules & Husky) complétée et vérifiée.
 
 ## Objective
-Plan et implémentation SOTA des fonctionnalités manquantes d'AETHER identifiées dans `fonctionnalites_manquantes_aether.md` : moteur de layout fluide (taffy), expression engine (evalexpr), automatisation sémantique audio/vidéo (detect-cuts, strip-silence), design tokens, colorimétrie avancée, bus audio, et enrichissement du compositing.
+Forensic Audit & Hardening of AETHER API Bridge (`services/aether-api-bridge`): Eliminate all typing violations (`as unknown as T`), unclosed file stream/descriptor leaks, path traversal vulnerabilities, and polling race conditions.
 
 ## Decisions made
 - [2025-06-02] Architecture: system.md + model JSON files for prompt injection (not external files at runtime)
@@ -23,23 +23,20 @@ Plan et implémentation SOTA des fonctionnalités manquantes d'AETHER identifié
 - [2026-06-06] Implémentation des design tokens et persistance SQLite résolue.
 - [2026-06-06] Mis à jour le rapport d'analyse d'écarts fonctionnalites_manquantes_aether.md en y cochant les fonctionnalités finalisées.
 - [2026-06-06] Effectué la recherche SOTA /deep-research et rédigé le plan d'implémentation des manquants de Premiere Pro.
+- [2026-08-24] Forensic Audit: Audit identified 5 key vulnerabilities/defects in `services/aether-api-bridge`: path traversal risk in `index.ts`, unsafe type assertions (`as unknown as Blob`) in `openai-image-edit.ts`, missing stream cleanup, unvalidated IPC JSON inputs, and un-cancellable polling loops.
+- [2026-08-24] Remediated all 5 vulnerabilities with zero-trust runtime schema validation (`isBridgeRequest`), path sanitization (`sanitizePath`), native Web API `File` objects with async `fs.promises.readFile`, and `AbortSignal`-enabled polling loops.
 
 ## 🌿 Active Branches / Plans
-- `bolt-multi-track-mixer-opt` : Optimize MultiTrackMixer array access
-- `bolt-optimize-compressor` : Optimize DynamicCompressor decibel math
-- `plan_add_git_folders` : Suivi des dossiers .agent et .GCC dans Git ([plan_add_git_folders.md](file:///home/omni/Code/AETHER/.GCC/branches/plan_add_git_folders.md))
-
+- `forensic-audit-hardening` : Audit and remediate defects in services/aether-api-bridge
 
 ## Current status
-- ✅ Done: Phase 1 (Automatisation Sémantique: detect-cuts, strip-silence, analyze-color)
-- ✅ Done: Phase 2 (Moteur de disposition Taffy v0.10.1)
-- ✅ Done: Phase 3 (Design Tokens & Thèmes: SQLite persistence, CLI parsing, daemon resolution)
-- ✅ Done: Configuration auto-review & auto-merge
-- 🔄 In progress: Phase 4 & Implémentation Premiere Pro — ⏳ En attente de l'approbation de l'utilisateur pour le plan d'implémentation
-- ⏳ Pending: Implémentation des phases 5 à 7 (Colorimétrie, Calques d'ajustement, Proxies, Queue)
+- ✅ Done: Forensic Audit & Hardening services/aether-api-bridge
+- ✅ Done: Pre-commit checks & Code Review (#Correct#)
+- 🔄 In progress: Generating Forensic Audit Report output
+- ⏳ Pending: Complete task submission
 
 ## Next action
-Attendre l'approbation de l'utilisateur sur le plan d'implémentation avant de corriger expressions.rs (Phase 4) et de commencer les manquants de Premiere Pro (Phases 5 à 7).
+Output the final Forensic Audit Report using the mandatory structure.
 
 ## Abandoned branches
 - None

@@ -45,18 +45,25 @@ function parseParams(options: Record<string, unknown> | undefined): NanoBananaIm
   const thinking = cap.thinking_level ?? cap.reasoning_effort;
   const imageSize = cap.image_size ?? cap.resolution;
 
+  const validPersons: Set<string> = new Set(["dont_allow", "allow_adult", "allow_all"]);
+  const validThinkings: Set<string> = new Set(["minimal", "low", "medium", "high"]);
+
+  const personStr = typeof cap.person_generation === "string" ? cap.person_generation : "";
+  const thinkingStr = typeof thinking === "string" ? thinking : "";
+
   return {
-    api_model: (cap.api_model as string) ?? DEFAULTS.api_model,
-    aspect_ratio: (cap.aspect_ratio as string) ?? DEFAULTS.aspect_ratio,
-    image_size: (imageSize as string) ?? DEFAULTS.image_size,
-    person_generation:
-      (cap.person_generation as NanoBananaImageEditParams["person_generation"]) ??
-      DEFAULTS.person_generation,
+    api_model: typeof cap.api_model === "string" ? cap.api_model : DEFAULTS.api_model,
+    aspect_ratio: typeof cap.aspect_ratio === "string" ? cap.aspect_ratio : DEFAULTS.aspect_ratio,
+    image_size: typeof imageSize === "string" ? imageSize : DEFAULTS.image_size,
+    person_generation: validPersons.has(personStr)
+      ? (personStr as NanoBananaImageEditParams["person_generation"])
+      : DEFAULTS.person_generation,
     temperature:
       typeof cap.temperature === "number" ? cap.temperature : DEFAULTS.temperature,
     top_p: typeof cap.top_p === "number" ? cap.top_p : DEFAULTS.top_p,
-    thinking_level:
-      (thinking as NanoBananaImageEditParams["thinking_level"]) ?? DEFAULTS.thinking_level,
+    thinking_level: validThinkings.has(thinkingStr)
+      ? (thinkingStr as NanoBananaImageEditParams["thinking_level"])
+      : DEFAULTS.thinking_level,
     number_of_images:
       typeof cap.number_of_images === "number"
         ? cap.number_of_images
@@ -69,8 +76,9 @@ function parseParams(options: Record<string, unknown> | undefined): NanoBananaIm
   };
 }
 
-function readImagePart(filePath: string) {
-  const data = fs.readFileSync(filePath).toString("base64");
+async function readImagePart(filePath: string) {
+  const buffer = await fs.promises.readFile(filePath);
+  const data = buffer.toString("base64");
   const ext = path.extname(filePath).toLowerCase();
   let mimeType = "image/png";
   if (ext === ".jpg" || ext === ".jpeg") mimeType = "image/jpeg";
@@ -115,10 +123,10 @@ export async function runNanoBananaImageEdit(args: {
   const ai = new GoogleGenAI({ apiKey });
 
   try {
-    const parts = [
-      { text: args.prompt },
-      ...args.input_image_paths.map((p) => readImagePart(p)),
-    ];
+    const imageParts = await Promise.all(
+      args.input_image_paths.map((p) => readImagePart(p))
+    );
+    const parts = [{ text: args.prompt }, ...imageParts];
 
     const config: Record<string, unknown> = {
       responseModalities: [Modality.TEXT, Modality.IMAGE],
@@ -156,7 +164,7 @@ export async function runNanoBananaImageEdit(args: {
             args.output_dir,
             `nano-banana-${Date.now()}-${artifacts.length}.${ext}`
           );
-          fs.writeFileSync(outPath, Buffer.from(part.inlineData.data, "base64"));
+          await fs.promises.writeFile(outPath, Buffer.from(part.inlineData.data, "base64"));
           artifacts.push({
             path: outPath,
             mime_type: mime,
@@ -198,7 +206,7 @@ export async function runNanoBananaImageEdit(args: {
         api: "generateContent",
         display_name: "Nano Banana 2",
         model: params.api_model,
-        params,
+        params: { ...params },
       },
     };
   } catch (err) {

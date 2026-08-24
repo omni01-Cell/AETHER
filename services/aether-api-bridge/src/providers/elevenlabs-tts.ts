@@ -36,9 +36,9 @@ function parseParams(options: Record<string, unknown> | undefined): ElevenLabsTT
       : o;
 
   return {
-    text: (cap.text as string) ?? DEFAULTS.text,
-    model_id: (cap.model_id as string) ?? DEFAULTS.model_id,
-    voice_id: (cap.voice_id as string) ?? DEFAULTS.voice_id,
+    text: typeof cap.text === "string" ? cap.text : DEFAULTS.text,
+    model_id: typeof cap.model_id === "string" ? cap.model_id : DEFAULTS.model_id,
+    voice_id: typeof cap.voice_id === "string" ? cap.voice_id : DEFAULTS.voice_id,
     stability: typeof cap.stability === "number" ? cap.stability : DEFAULTS.stability,
     similarity_boost:
       typeof cap.similarity_boost === "number"
@@ -46,7 +46,7 @@ function parseParams(options: Record<string, unknown> | undefined): ElevenLabsTT
         : DEFAULTS.similarity_boost,
     style: typeof cap.style === "number" ? cap.style : DEFAULTS.style,
     output_format:
-      (cap.output_format as string) ?? DEFAULTS.output_format,
+      typeof cap.output_format === "string" ? cap.output_format : DEFAULTS.output_format,
   };
 }
 
@@ -113,7 +113,7 @@ export async function runElevenLabsTTS(args: {
       args.output_dir,
       `elevenlabs-${Date.now()}.${ext}`
     );
-    fs.writeFileSync(outPath, audioBuffer);
+    await fs.promises.writeFile(outPath, audioBuffer);
 
     return {
       ok: true,
@@ -134,7 +134,7 @@ export async function runElevenLabsTTS(args: {
       metadata: {
         api: "POST /v1/text-to-speech/{voice_id}",
         model: params.model_id,
-        params,
+        params: { ...params },
       },
     };
   } catch (err) {

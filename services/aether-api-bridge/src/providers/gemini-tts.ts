@@ -33,8 +33,8 @@ function parseParams(options: Record<string, unknown> | undefined): GeminiTTSPar
       : o;
 
   return {
-    text: (cap.text as string) ?? DEFAULTS.text,
-    voice_name: (cap.voice_name as string) ?? DEFAULTS.voice_name,
+    text: typeof cap.text === "string" ? cap.text : DEFAULTS.text,
+    voice_name: typeof cap.voice_name === "string" ? cap.voice_name : DEFAULTS.voice_name,
     speaking_rate:
       typeof cap.speaking_rate === "number"
         ? cap.speaking_rate
@@ -88,7 +88,7 @@ export async function runGeminiTTS(args: {
             },
           },
         },
-      } as Parameters<typeof ai.models.generateContent>[0]["config"],
+      },
     });
 
     // Extract audio from response
@@ -101,7 +101,7 @@ export async function runGeminiTTS(args: {
             args.output_dir,
             `gemini-tts-${Date.now()}.${ext}`
           );
-          fs.writeFileSync(outPath, Buffer.from(part.inlineData.data, "base64"));
+          await fs.promises.writeFile(outPath, Buffer.from(part.inlineData.data, "base64"));
 
           return {
             ok: true,
@@ -122,7 +122,7 @@ export async function runGeminiTTS(args: {
             metadata: {
               api: "generateContent",
               model: "gemini-3.1-flash-tts",
-              params,
+              params: { ...params },
             },
           };
         }

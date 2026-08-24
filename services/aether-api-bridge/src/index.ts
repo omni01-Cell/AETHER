@@ -1,13 +1,17 @@
 #!/usr/bin/env node
 import fs from "node:fs";
-import type { BridgeRequest, BridgeResponse } from "./protocol.js";
-import { BRIDGE_VERSION, bridgeError } from "./protocol.js";
+import type { BridgeResponse } from "./protocol.js";
+import { BRIDGE_VERSION, bridgeError, isBridgeRequest, sanitizePath } from "./protocol.js";
 import { dispatch } from "./router.js";
 
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) {
-    chunks.push(chunk as Buffer);
+    if (Buffer.isBuffer(chunk)) {
+      chunks.push(chunk);
+    } else {
+      chunks.push(Buffer.from(chunk as string | Uint8Array));
+    }
   }
   return Buffer.concat(chunks).toString("utf8");
 }
@@ -24,14 +28,28 @@ async function main(): Promise<void> {
     return;
   }
 
-  let req: BridgeRequest;
+  let parsed: unknown;
   try {
-    req = JSON.parse(raw) as BridgeRequest;
+    parsed = JSON.parse(raw);
   } catch {
     writeResponse(bridgeError("bridge", "Invalid JSON on stdin", false));
     process.exit(1);
     return;
   }
+
+  if (!isBridgeRequest(parsed)) {
+    writeResponse(
+      bridgeError(
+        "bridge",
+        "Invalid BridgeRequest schema: missing or invalid required fields",
+        false
+      )
+    );
+    process.exit(1);
+    return;
+  }
+
+  const req = parsed;
 
   if (req.version !== BRIDGE_VERSION) {
     writeResponse(
@@ -39,6 +57,39 @@ async function main(): Promise<void> {
     );
     process.exit(1);
     return;
+  }
+
+  // Sanitize paths in the request
+  if (req.output_dir) {
+    try {
+      req.output_dir = sanitizePath(req.output_dir);
+    } catch (err) {
+      writeResponse(
+        bridgeError(
+          "bridge",
+          `Invalid output_dir path: ${err instanceof Error ? err.message : String(err)}`,
+          false
+        )
+      );
+      process.exit(1);
+      return;
+    }
+  }
+
+  if (req.input_image_paths) {
+    try {
+      req.input_image_paths = req.input_image_paths.map((p) => sanitizePath(p));
+    } catch (err) {
+      writeResponse(
+        bridgeError(
+          "bridge",
+          `Invalid input_image_paths: ${err instanceof Error ? err.message : String(err)}`,
+          false
+        )
+      );
+      process.exit(1);
+      return;
+    }
   }
 
   if (req.operation === "image_edit") {
@@ -56,7 +107,7 @@ async function main(): Promise<void> {
         writeResponse(
           bridgeError(
             "bridge",
-            `Cannot create output_dir: ${req.output_dir} (${e})`,
+            `Cannot create output_dir: ${req.output_dir} (${e instanceof Error ? e.message : String(e)})`,
             false
           )
         );

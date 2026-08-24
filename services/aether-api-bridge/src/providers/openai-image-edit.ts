@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import { toFile } from "openai";
 import type { BridgeArtifact, BridgeFailure, BridgeSuccess } from "../protocol.js";
 import { bridgeError } from "../protocol.js";
 
@@ -29,30 +28,65 @@ const DEFAULTS: OpenAiImageEditParams = {
   moderation: "auto",
 };
 
+interface OpenAiImagesEditResponse {
+  data?: Array<{ b64_json?: string; revised_prompt?: string }>;
+  usage?: Record<string, unknown>;
+  error?: { message?: string };
+}
+
+function isOpenAiImagesEditResponse(val: unknown): val is OpenAiImagesEditResponse {
+  if (typeof val !== "object" || val === null) return false;
+  const obj = val as Record<string, unknown>;
+  if (obj.data !== undefined && !Array.isArray(obj.data)) return false;
+  return true;
+}
+
 function parseParams(options: Record<string, unknown> | undefined): OpenAiImageEditParams {
   const o = options ?? {};
   const cap =
     typeof o.openai === "object" && o.openai !== null
       ? (o.openai as Record<string, unknown>)
       : o;
+
+  const validQualities: Set<string> = new Set(["low", "medium", "high", "auto"]);
+  const validSizes: Set<string> = new Set(["auto", "1024x1024", "1536x1024", "1024x1536"]);
+  const validFormats: Set<string> = new Set(["png", "jpeg", "webp"]);
+  const validBackgrounds: Set<string> = new Set(["transparent", "opaque", "auto"]);
+  const validFidelities: Set<string> = new Set(["high", "low"]);
+  const validModerations: Set<string> = new Set(["low", "auto"]);
+
+  const qualityStr = typeof cap.quality === "string" ? cap.quality : "";
+  const sizeStr = typeof cap.size === "string" ? cap.size : "";
+  const formatStr = typeof cap.output_format === "string" ? cap.output_format : "";
+  const bgStr = typeof cap.background === "string" ? cap.background : "";
+  const fidelityStr = typeof cap.input_fidelity === "string" ? cap.input_fidelity : "";
+  const modStr = typeof cap.moderation === "string" ? cap.moderation : "";
+
   return {
-    api_model: (cap.api_model as string) ?? DEFAULTS.api_model,
-    quality: (cap.quality as OpenAiImageEditParams["quality"]) ?? DEFAULTS.quality,
-    size: (cap.size as OpenAiImageEditParams["size"]) ?? DEFAULTS.size,
+    api_model: typeof cap.api_model === "string" ? cap.api_model : DEFAULTS.api_model,
+    quality: validQualities.has(qualityStr)
+      ? (qualityStr as OpenAiImageEditParams["quality"])
+      : DEFAULTS.quality,
+    size: validSizes.has(sizeStr)
+      ? (sizeStr as OpenAiImageEditParams["size"])
+      : DEFAULTS.size,
     n: typeof cap.n === "number" ? cap.n : DEFAULTS.n,
-    output_format:
-      (cap.output_format as OpenAiImageEditParams["output_format"]) ??
-      DEFAULTS.output_format,
+    output_format: validFormats.has(formatStr)
+      ? (formatStr as OpenAiImageEditParams["output_format"])
+      : DEFAULTS.output_format,
     output_compression:
       typeof cap.output_compression === "number"
         ? cap.output_compression
         : undefined,
-    background: (cap.background as OpenAiImageEditParams["background"]) ?? DEFAULTS.background,
-    input_fidelity:
-      (cap.input_fidelity as OpenAiImageEditParams["input_fidelity"]) ??
-      DEFAULTS.input_fidelity,
-    moderation:
-      (cap.moderation as OpenAiImageEditParams["moderation"]) ?? DEFAULTS.moderation,
+    background: validBackgrounds.has(bgStr)
+      ? (bgStr as OpenAiImageEditParams["background"])
+      : DEFAULTS.background,
+    input_fidelity: validFidelities.has(fidelityStr)
+      ? (fidelityStr as OpenAiImageEditParams["input_fidelity"])
+      : DEFAULTS.input_fidelity,
+    moderation: validModerations.has(modStr)
+      ? (modStr as OpenAiImageEditParams["moderation"])
+      : DEFAULTS.moderation,
     mask_path: typeof cap.mask_path === "string" ? cap.mask_path : undefined,
   };
 }
@@ -80,21 +114,20 @@ export async function runOpenAiImageEdit(args: {
   }
 
   const params = parseParams(args.options);
-    try {
-    const imageFiles = await Promise.all(
-      args.input_image_paths.map((p, i) =>
-        toFile(fs.createReadStream(p), path.basename(p), {
-          type: mimeFromPath(p),
-        }).then((f) => ({ index: i, file: f }))
-      )
-    );
 
+  try {
     const form = new FormData();
     form.append("model", params.api_model);
     form.append("prompt", args.prompt);
-    for (const { file } of imageFiles) {
-      form.append("image[]", file as unknown as Blob);
+
+    for (const p of args.input_image_paths) {
+      const buffer = await fs.promises.readFile(p);
+      const file = new File([buffer], path.basename(p), {
+        type: mimeFromPath(p),
+      });
+      form.append("image[]", file);
     }
+
     form.append("quality", params.quality);
     form.append("size", params.size);
     form.append("n", String(params.n));
@@ -102,16 +135,17 @@ export async function runOpenAiImageEdit(args: {
     form.append("background", params.background);
     form.append("input_fidelity", params.input_fidelity);
     form.append("moderation", params.moderation);
+
     if (params.output_compression !== undefined) {
       form.append("output_compression", String(params.output_compression));
     }
+
     if (params.mask_path) {
-      const maskFile = await toFile(
-        fs.createReadStream(params.mask_path),
-        path.basename(params.mask_path),
-        { type: mimeFromPath(params.mask_path) }
-      );
-      form.append("mask", maskFile as unknown as Blob);
+      const maskBuffer = await fs.promises.readFile(params.mask_path);
+      const maskFile = new File([maskBuffer], path.basename(params.mask_path), {
+        type: mimeFromPath(params.mask_path),
+      });
+      form.append("mask", maskFile);
     }
 
     const httpRes = await fetch("https://api.openai.com/v1/images/edits", {
@@ -119,19 +153,27 @@ export async function runOpenAiImageEdit(args: {
       headers: { Authorization: `Bearer ${apiKey}` },
       body: form,
     });
-    const response = (await httpRes.json()) as OpenAiImagesEditResponse;
+
+    const rawJson: unknown = await httpRes.json();
+    const response: OpenAiImagesEditResponse = isOpenAiImagesEditResponse(rawJson)
+      ? rawJson
+      : {};
+
     if (!httpRes.ok) {
       const msg =
-        typeof response === "object" && response && "error" in response
-          ? JSON.stringify((response as { error: unknown }).error)
-          : httpRes.statusText;
+        response.error?.message ??
+        (typeof rawJson === "object" && rawJson !== null
+          ? JSON.stringify(rawJson)
+          : httpRes.statusText);
       return bridgeError("openai", `OpenAI HTTP ${httpRes.status}: ${msg}`, httpRes.status >= 500);
     }
+
     const artifacts: BridgeArtifact[] = [];
     const ext = params.output_format === "jpeg" ? "jpg" : params.output_format;
 
-    for (let i = 0; i < (response.data?.length ?? 0); i++) {
-      const item = response.data![i];
+    const dataList = response.data ?? [];
+    for (let i = 0; i < dataList.length; i++) {
+      const item = dataList[i];
       const b64 = item.b64_json;
       if (!b64) {
         return bridgeError("openai", "OpenAI response missing b64_json for edited image", true);
@@ -140,7 +182,7 @@ export async function runOpenAiImageEdit(args: {
         args.output_dir,
         `openai-edit-${Date.now()}-${i}.${ext}`
       );
-      fs.writeFileSync(outPath, Buffer.from(b64, "base64"));
+      await fs.promises.writeFile(outPath, Buffer.from(b64, "base64"));
       artifacts.push({
         path: outPath,
         mime_type: mimeFromFormat(params.output_format),
@@ -188,10 +230,4 @@ function mimeFromFormat(fmt: string): string {
   if (fmt === "jpeg") return "image/jpeg";
   if (fmt === "webp") return "image/webp";
   return "image/png";
-}
-
-interface OpenAiImagesEditResponse {
-  data?: Array<{ b64_json?: string; revised_prompt?: string }>;
-  usage?: Record<string, unknown>;
-  error?: { message?: string };
 }

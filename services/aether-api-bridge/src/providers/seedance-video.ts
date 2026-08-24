@@ -47,12 +47,22 @@ function parseParams(
       ? (o.bytedance as Record<string, unknown>)
       : o;
 
+  const validRes: Set<string> = new Set(["480p", "720p"]);
+  const validModels: Set<string> = new Set(["fast", "standard"]);
+
+  const resStr = typeof cap.resolution === "string" ? cap.resolution : "";
+  const modelStr = typeof cap.model === "string" ? cap.model : "";
+
   const params: SeedanceVideoParams = {
     prompt,
-    aspect_ratio: (cap.aspect_ratio as string) ?? DEFAULTS.aspect_ratio,
+    aspect_ratio: typeof cap.aspect_ratio === "string" ? cap.aspect_ratio : DEFAULTS.aspect_ratio,
     duration: typeof cap.duration === "number" ? cap.duration : DEFAULTS.duration,
-    resolution: (cap.resolution as SeedanceVideoParams["resolution"]) ?? DEFAULTS.resolution,
-    model: (cap.model as SeedanceVideoParams["model"]) ?? DEFAULTS.model,
+    resolution: validRes.has(resStr)
+      ? (resStr as SeedanceVideoParams["resolution"])
+      : DEFAULTS.resolution,
+    model: validModels.has(modelStr)
+      ? (modelStr as SeedanceVideoParams["model"])
+      : DEFAULTS.model,
     generate_audio:
       typeof cap.generate_audio === "boolean"
         ? cap.generate_audio
@@ -78,8 +88,9 @@ function parseParams(
   return params;
 }
 
-function readImageAsBase64(filePath: string): { mimeType: string; data: string } {
-  const data = fs.readFileSync(filePath).toString("base64");
+async function readImageAsBase64(filePath: string): Promise<{ mimeType: string; data: string }> {
+  const buffer = await fs.promises.readFile(filePath);
+  const data = buffer.toString("base64");
   const ext = path.extname(filePath).toLowerCase();
   let mimeType = "image/png";
   if (ext === ".jpg" || ext === ".jpeg") mimeType = "image/jpeg";
@@ -93,7 +104,6 @@ export async function runSeedanceVideo(args: {
   output_dir: string;
   options?: Record<string, unknown>;
 }): Promise<BridgeSuccess | BridgeFailure> {
-  // Try multiple API key sources
   const apiKey =
     process.env.AETHER_BYTEDANCE_API_KEY ??
     process.env.SEEDANCE_API_KEY ??
@@ -110,7 +120,6 @@ export async function runSeedanceVideo(args: {
   const params = parseParams(args.options, args.prompt, args.input_image_paths);
 
   try {
-    // Build request body for Seedance 2.0 API
     const body: Record<string, unknown> = {
       prompt: params.prompt,
       aspect_ratio: params.aspect_ratio,
@@ -122,26 +131,26 @@ export async function runSeedanceVideo(args: {
       watermark: params.watermark,
     };
 
-    // Image-to-video mode
     if (params.first_frame) {
-      const img = readImageAsBase64(params.first_frame);
+      const img = await readImageAsBase64(params.first_frame);
       body.first_frame = `data:${img.mimeType};base64,${img.data}`;
     }
 
     if (params.last_frame) {
-      const img = readImageAsBase64(params.last_frame);
+      const img = await readImageAsBase64(params.last_frame);
       body.last_frame = `data:${img.mimeType};base64,${img.data}`;
     }
 
-    // Reference images for multimodal mode
     if (params.reference_images && params.reference_images.length > 0) {
-      body.reference_images = params.reference_images.map((p) => {
-        const img = readImageAsBase64(p);
-        return `data:${img.mimeType};base64,${img.data}`;
-      });
+      const refs = await Promise.all(
+        params.reference_images.map(async (p) => {
+          const img = await readImageAsBase64(p);
+          return `data:${img.mimeType};base64,${img.data}`;
+        })
+      );
+      body.reference_images = refs;
     }
 
-    // Submit generation task
     const submitRes = await fetch("https://api.segmind.com/v1/seedance-2.0", {
       method: "POST",
       headers: {
@@ -160,13 +169,12 @@ export async function runSeedanceVideo(args: {
       );
     }
 
-    // Segmind returns the video directly as binary
     const videoBuffer = Buffer.from(await submitRes.arrayBuffer());
     const outPath = path.join(
       args.output_dir,
       `seedance-${Date.now()}.mp4`
     );
-    fs.writeFileSync(outPath, videoBuffer);
+    await fs.promises.writeFile(outPath, videoBuffer);
 
     return {
       ok: true,
@@ -189,7 +197,7 @@ export async function runSeedanceVideo(args: {
       metadata: {
         api: "POST /v1/seedance-2.0",
         model: params.model,
-        params,
+        params: { ...params },
       },
     };
   } catch (err) {
