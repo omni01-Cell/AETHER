@@ -32,11 +32,11 @@ function parseParams(options: Record<string, unknown> | undefined): OpenAITTSPar
       : o;
 
   return {
-    text: (cap.text as string) ?? DEFAULTS.text,
-    model: (cap.model as string) ?? DEFAULTS.model,
-    voice: (cap.voice as string) ?? DEFAULTS.voice,
+    text: typeof cap.text === "string" ? cap.text : DEFAULTS.text,
+    model: typeof cap.model === "string" ? cap.model : DEFAULTS.model,
+    voice: typeof cap.voice === "string" ? cap.voice : DEFAULTS.voice,
     response_format:
-      (cap.response_format as string) ?? DEFAULTS.response_format,
+      typeof cap.response_format === "string" ? cap.response_format : DEFAULTS.response_format,
     speed: typeof cap.speed === "number" ? cap.speed : DEFAULTS.speed,
   };
 }
@@ -90,7 +90,7 @@ export async function runOpenAITTS(args: {
       args.output_dir,
       `openai-tts-${Date.now()}.${ext}`
     );
-    fs.writeFileSync(outPath, audioBuffer);
+    await fs.promises.writeFile(outPath, audioBuffer);
 
     return {
       ok: true,
@@ -111,7 +111,7 @@ export async function runOpenAITTS(args: {
       metadata: {
         api: "POST /v1/audio/speech",
         model: params.model,
-        params,
+        params: { ...params },
       },
     };
   } catch (err) {

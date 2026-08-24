@@ -15,11 +15,14 @@ export async function runOpenAiChat(req: BridgeRequest): Promise<BridgeResponse>
     return bridgeError("openai", "chat_completions requires messages", false);
   }
 
+  const tempOption = req.options?.temperature;
+  const temperature = typeof tempOption === "number" ? tempOption : undefined;
+
   const body: Record<string, unknown> = {
     model: apiModel,
     messages,
     ...(req.tools ? { tools: req.tools, tool_choice: "auto" } : {}),
-    ...(req.options?.temperature != null ? { temperature: req.options.temperature } : {}),
+    ...(temperature !== undefined ? { temperature } : {}),
   };
 
   let res: Response;
@@ -53,7 +56,7 @@ export async function runOpenAiChat(req: BridgeRequest): Promise<BridgeResponse>
     artifacts: [],
     metadata: {
       raw_response: raw,
-      agent: req.agent,
+      agent: req.agent ?? "default",
       api_model: apiModel,
     },
   };
