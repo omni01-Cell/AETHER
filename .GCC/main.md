@@ -27,6 +27,7 @@ Plan et implémentation SOTA des fonctionnalités manquantes d'AETHER identifié
 ## 🌿 Active Branches / Plans
 - `bolt-multi-track-mixer-opt` : Optimize MultiTrackMixer array access
 - `bolt-optimize-compressor` : Optimize DynamicCompressor decibel math
+- `bolt-iterator-alloc-optimizations` : Optimize iterations and string allocations
 - `plan_add_git_folders` : Suivi des dossiers .agent et .GCC dans Git ([plan_add_git_folders.md](file:///home/omni/Code/AETHER/.GCC/branches/plan_add_git_folders.md))
 
 

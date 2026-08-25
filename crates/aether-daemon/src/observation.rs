@@ -156,10 +156,9 @@ pub fn analyze_audio_rms(audio_path: &Path) -> Result<Vec<f32>, AetherError> {
     let got_ffmpeg_wav = match status {
         Ok(s) if s.success() && temp_wav.exists() => {
             if let Ok(mut reader) = WavReader::open(&temp_wav) {
-                for sample in reader.samples::<i16>() {
-                    if let Ok(val) = sample {
-                        samples.push(val as f32 / 32768.0);
-                    }
+                // Optimization (Bolt): Used .flatten() on fallible iterator to eliminate explicit conditional branching in loop.
+                for val in reader.samples::<i16>().flatten() {
+                    samples.push(val as f32 / 32768.0);
                 }
                 true
             } else {
@@ -176,10 +175,9 @@ pub fn analyze_audio_rms(audio_path: &Path) -> Result<Vec<f32>, AetherError> {
     // Direct WAV fallback
     if !got_ffmpeg_wav {
         if let Ok(mut reader) = WavReader::open(audio_path) {
-            for sample in reader.samples::<i16>() {
-                if let Ok(val) = sample {
-                    samples.push(val as f32 / 32768.0);
-                }
+            // Optimization (Bolt): Used .flatten() on fallible iterator to eliminate explicit conditional branching in loop.
+            for val in reader.samples::<i16>().flatten() {
+                samples.push(val as f32 / 32768.0);
             }
         }
     }
@@ -368,7 +366,8 @@ pub fn detect_audio_transients(rms: &[f32], fps: f32) -> Vec<f32> {
     for i in 0..rms.len() {
         let val = rms[i];
         if val > 0.1 {
-            let start = if i >= 5 { i - 5 } else { 0 };
+            // Optimization (Bolt): Replaced manual check with saturating_sub for cleaner and faster branchless boundary.
+            let start = i.saturating_sub(5);
             let count = i - start;
             if count > 0 {
                 let sum: f32 = rms[start..i].iter().sum();

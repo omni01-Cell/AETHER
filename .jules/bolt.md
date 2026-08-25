@@ -4,3 +4,6 @@
 ## 2025-06-03 - Optimizing MultiTrackMixer audio mixing loop
 **Learning:** Explicit indexing in inner DSP loops (`mixed[0][sample_idx] += ...`) forces Rust to perform redundant runtime bounds checks, creating a significant performance bottleneck.
 **Action:** Use iterators (e.g., `iter_mut().zip()`) and slice splitting (`split_at_mut()`) on parallel buffers to completely elide bounds checks and safely handle mutable aliasing.
+## 2026-08-25 - Flatten Option/Result Iteration and Array Replace in Rust
+**Learning:** Using `.flatten()` on iterators of `Result` or `Option` avoids inner conditional branching and is significantly faster in tight audio processing loops. Consecutive `.replace` for single character replacements creates unneeded allocations; passing an array of chars `replace(['(', ')'], "")` avoids this.
+**Action:** Use `.flatten()` on fallible iterators and always collapse consecutive char replaces into an array replace.
