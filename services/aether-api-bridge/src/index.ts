@@ -41,28 +41,29 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (req.operation === "image_edit") {
+  if (req.operation !== "chat_completions") {
     if (!req.output_dir) {
       writeResponse(
-        bridgeError("bridge", "image_edit requires output_dir", false)
+        bridgeError("bridge", `${req.operation} requires output_dir`, false)
       );
       process.exit(1);
       return;
     }
-    if (!fs.existsSync(req.output_dir)) {
-      try {
-        fs.mkdirSync(req.output_dir, { recursive: true });
-      } catch (e) {
-        writeResponse(
-          bridgeError(
-            "bridge",
-            `Cannot create output_dir: ${req.output_dir} (${e})`,
-            false
-          )
-        );
-        process.exit(1);
-        return;
-      }
+  }
+
+  if (req.output_dir && !fs.existsSync(req.output_dir)) {
+    try {
+      fs.mkdirSync(req.output_dir, { recursive: true });
+    } catch (e) {
+      writeResponse(
+        bridgeError(
+          "bridge",
+          `Cannot create output_dir: ${req.output_dir} (${e})`,
+          false
+        )
+      );
+      process.exit(1);
+      return;
     }
   }
 

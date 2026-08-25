@@ -229,7 +229,7 @@ impl BridgeGenerationProvider {
             })
             .unwrap_or_default();
 
-        if input_paths.is_empty() {
+        if matches!(op, BridgeOperation::ImageEdit) && input_paths.is_empty() {
             return Err(AetherError::OperationFailed(
                 "Bridge image_edit requires options.input_asset_paths (absolute file paths)"
                     .to_string(),
@@ -385,5 +385,95 @@ impl GenerationProvider for BridgeGenerationProvider {
 
     fn cancel(&self, _job: &GenerationJob) -> Result<(), AetherError> {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aether_core::Ref;
+
+    #[test]
+    fn test_bridge_build_request_for_voice_and_music_without_inputs() {
+        let provider = BridgeGenerationProvider {
+            bridge_script: PathBuf::from("/tmp/fake.js"),
+            output_dir: PathBuf::from("/tmp/fake_out"),
+        };
+
+        let voice_req = GenerationRequest {
+            job_ref: "@g1".parse::<Ref>().unwrap(),
+            kind: GenerationKind::Voice,
+            user_request: "Hello world".to_string(),
+            model: Some("elevenlabs/eleven_v3".to_string()),
+            inputs: Vec::new(),
+            options: serde_json::json!({}),
+        };
+
+        let voice_model = ProviderModel {
+            id: "elevenlabs/eleven_v3".to_string(),
+            provider: "elevenlabs".to_string(),
+            kind: GenerationKind::Voice,
+            enabled: true,
+            capabilities: serde_json::json!({
+                "bridge_handler": "elevenlabs-tts"
+            }),
+        };
+
+        let req = provider.build_request(&voice_req, &voice_model, "Hello world").unwrap();
+        assert_eq!(req.operation, "voice_generate");
+        assert_eq!(req.bridge_handler.as_deref(), Some("elevenlabs-tts"));
+        assert!(req.input_image_paths.is_empty());
+
+        let music_req = GenerationRequest {
+            job_ref: "@g2".parse::<Ref>().unwrap(),
+            kind: GenerationKind::Music,
+            user_request: "Upbeat jazz track".to_string(),
+            model: Some("minimax/music-2.5".to_string()),
+            inputs: Vec::new(),
+            options: serde_json::json!({}),
+        };
+
+        let music_model = ProviderModel {
+            id: "minimax/music-2.5".to_string(),
+            provider: "minimax".to_string(),
+            kind: GenerationKind::Music,
+            enabled: true,
+            capabilities: serde_json::json!({
+                "bridge_handler": "minimax-music"
+            }),
+        };
+
+        let req_music = provider.build_request(&music_req, &music_model, "Upbeat jazz track").unwrap();
+        assert_eq!(req_music.operation, "music_generate");
+        assert_eq!(req_music.bridge_handler.as_deref(), Some("minimax-music"));
+        assert!(req_music.input_image_paths.is_empty());
+    }
+
+    #[test]
+    fn test_bridge_build_request_for_image_edit_fails_without_inputs() {
+        let provider = BridgeGenerationProvider {
+            bridge_script: PathBuf::from("/tmp/fake.js"),
+            output_dir: PathBuf::from("/tmp/fake_out"),
+        };
+
+        let edit_req = GenerationRequest {
+            job_ref: "@g3".parse::<Ref>().unwrap(),
+            kind: GenerationKind::ImageEdit,
+            user_request: "Make background blue".to_string(),
+            model: Some("openai/gpt-image-2".to_string()),
+            inputs: Vec::new(),
+            options: serde_json::json!({}),
+        };
+
+        let model = ProviderModel {
+            id: "openai/gpt-image-2".to_string(),
+            provider: "openai".to_string(),
+            kind: GenerationKind::ImageEdit,
+            enabled: true,
+            capabilities: serde_json::json!({}),
+        };
+
+        let res = provider.build_request(&edit_req, &model, "Make background blue");
+        assert!(res.is_err());
     }
 }

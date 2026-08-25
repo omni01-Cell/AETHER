@@ -22,6 +22,8 @@ impl RoutingGenerationProvider {
             || model.provider == "google"
             || model.provider == "bytedance"
             || model.provider == "kuaishou"
+            || model.provider == "elevenlabs"
+            || model.provider == "minimax"
         {
             let bridge = self.bridge.as_ref().ok_or_else(|| {
                 AetherError::OperationFailed(
