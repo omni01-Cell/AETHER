@@ -37,14 +37,25 @@ function parseParams(options: Record<string, unknown> | undefined): MiniMaxMusic
       ? (o.minimax as Record<string, unknown>)
       : o;
 
+  const prompt = typeof cap.prompt === "string" ? cap.prompt : DEFAULTS.prompt;
+  const lyrics = typeof cap.lyrics === "string" ? cap.lyrics : DEFAULTS.lyrics;
+  const duration = typeof cap.duration === "number" ? cap.duration : DEFAULTS.duration;
+
+  let audio_setting = DEFAULTS.audio_setting;
+  if (typeof cap.audio_setting === "object" && cap.audio_setting !== null) {
+    const aset = cap.audio_setting as Record<string, unknown>;
+    audio_setting = {
+      sample_rate: typeof aset.sample_rate === "number" ? aset.sample_rate : DEFAULTS.audio_setting.sample_rate,
+      bitrate: typeof aset.bitrate === "number" ? aset.bitrate : DEFAULTS.audio_setting.bitrate,
+      format: typeof aset.format === "string" ? aset.format : DEFAULTS.audio_setting.format,
+    };
+  }
+
   return {
-    prompt: (cap.prompt as string) ?? DEFAULTS.prompt,
-    lyrics: (cap.lyrics as string) ?? DEFAULTS.lyrics,
-    duration: typeof cap.duration === "number" ? cap.duration : DEFAULTS.duration,
-    audio_setting:
-      typeof cap.audio_setting === "object" && cap.audio_setting !== null
-        ? (cap.audio_setting as MiniMaxMusicParams["audio_setting"])
-        : DEFAULTS.audio_setting,
+    prompt,
+    lyrics,
+    duration,
+    audio_setting,
   };
 }
 
@@ -71,7 +82,6 @@ export async function runMiniMaxMusic(args: {
   }
 
   try {
-    // Submit generation task via FAL.AI
     const submitRes = await fetch("https://fal.run/fal-ai/minimax-music/v2", {
       method: "POST",
       headers: {
@@ -95,17 +105,13 @@ export async function runMiniMaxMusic(args: {
       );
     }
 
-    const submitData = (await submitRes.json()) as {
-      request_id?: string;
-      status?: string;
-    };
+    const submitDataObj = (await submitRes.json()) as Record<string, unknown>;
+    const requestId = typeof submitDataObj.request_id === "string" ? submitDataObj.request_id : undefined;
 
-    const requestId = submitData.request_id;
     if (!requestId) {
       return bridgeError("minimax-music", "No request_id returned", true);
     }
 
-    // Poll for completion
     let status = "submitted";
     let audioUrl: string | null = null;
     const maxAttempts = 60;
@@ -126,16 +132,14 @@ export async function runMiniMaxMusic(args: {
 
       if (!statusRes.ok) continue;
 
-      const statusData = (await statusRes.json()) as {
-        status?: string;
-        audio_url?: string;
-        output?: { audio_url?: string };
-      };
-
-      status = statusData.status ?? "processing";
+      const statusDataObj = (await statusRes.json()) as Record<string, unknown>;
+      status = typeof statusDataObj.status === "string" ? statusDataObj.status : "processing";
 
       if (status === "COMPLETED" || status === "completed") {
-        audioUrl = statusData.audio_url ?? statusData.output?.audio_url ?? null;
+        const topAudioUrl = typeof statusDataObj.audio_url === "string" ? statusDataObj.audio_url : undefined;
+        const outObj = typeof statusDataObj.output === "object" && statusDataObj.output !== null ? (statusDataObj.output as Record<string, unknown>) : undefined;
+        const outAudioUrl = typeof outObj?.audio_url === "string" ? outObj.audio_url : undefined;
+        audioUrl = topAudioUrl ?? outAudioUrl ?? null;
         break;
       }
 
@@ -148,7 +152,6 @@ export async function runMiniMaxMusic(args: {
       return bridgeError("minimax-music", "Music generation timed out", true);
     }
 
-    // Download the audio
     const audioRes = await fetch(audioUrl);
     if (!audioRes.ok) {
       return bridgeError(

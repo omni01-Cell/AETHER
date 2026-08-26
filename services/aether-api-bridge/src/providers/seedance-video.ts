@@ -36,6 +36,9 @@ const DEFAULTS: SeedanceVideoParams = {
   watermark: false,
 };
 
+const VALID_RESOLUTIONS = new Set<SeedanceVideoParams["resolution"]>(["480p", "720p"]);
+const VALID_MODELS = new Set<SeedanceVideoParams["model"]>(["fast", "standard"]);
+
 function parseParams(
   options: Record<string, unknown> | undefined,
   prompt: string,
@@ -47,22 +50,31 @@ function parseParams(
       ? (o.bytedance as Record<string, unknown>)
       : o;
 
+  const aspect_ratio = typeof cap.aspect_ratio === "string" ? cap.aspect_ratio : DEFAULTS.aspect_ratio;
+  const duration = typeof cap.duration === "number" ? cap.duration : DEFAULTS.duration;
+  const resolution =
+    typeof cap.resolution === "string" && VALID_RESOLUTIONS.has(cap.resolution as SeedanceVideoParams["resolution"])
+      ? (cap.resolution as SeedanceVideoParams["resolution"])
+      : DEFAULTS.resolution;
+  const model =
+    typeof cap.model === "string" && VALID_MODELS.has(cap.model as SeedanceVideoParams["model"])
+      ? (cap.model as SeedanceVideoParams["model"])
+      : DEFAULTS.model;
+  const generate_audio = typeof cap.generate_audio === "boolean" ? cap.generate_audio : DEFAULTS.generate_audio;
+  const seed = typeof cap.seed === "number" ? cap.seed : DEFAULTS.seed;
+  const watermark = typeof cap.watermark === "boolean" ? cap.watermark : DEFAULTS.watermark;
+
   const params: SeedanceVideoParams = {
     prompt,
-    aspect_ratio: (cap.aspect_ratio as string) ?? DEFAULTS.aspect_ratio,
-    duration: typeof cap.duration === "number" ? cap.duration : DEFAULTS.duration,
-    resolution: (cap.resolution as SeedanceVideoParams["resolution"]) ?? DEFAULTS.resolution,
-    model: (cap.model as SeedanceVideoParams["model"]) ?? DEFAULTS.model,
-    generate_audio:
-      typeof cap.generate_audio === "boolean"
-        ? cap.generate_audio
-        : DEFAULTS.generate_audio,
-    seed: typeof cap.seed === "number" ? cap.seed : DEFAULTS.seed,
-    watermark:
-      typeof cap.watermark === "boolean" ? cap.watermark : DEFAULTS.watermark,
+    aspect_ratio,
+    duration,
+    resolution,
+    model,
+    generate_audio,
+    seed,
+    watermark,
   };
 
-  // Image-to-video: first frame from input images
   if (inputImagePaths.length > 0) {
     params.first_frame = inputImagePaths[0];
     if (inputImagePaths.length > 1) {
@@ -70,7 +82,6 @@ function parseParams(
     }
   }
 
-  // Reference images for multimodal mode
   if (inputImagePaths.length > 2) {
     params.reference_images = inputImagePaths.slice(2);
   }
@@ -93,7 +104,6 @@ export async function runSeedanceVideo(args: {
   output_dir: string;
   options?: Record<string, unknown>;
 }): Promise<BridgeSuccess | BridgeFailure> {
-  // Try multiple API key sources
   const apiKey =
     process.env.AETHER_BYTEDANCE_API_KEY ??
     process.env.SEEDANCE_API_KEY ??
@@ -107,10 +117,15 @@ export async function runSeedanceVideo(args: {
     );
   }
 
+  for (const p of args.input_image_paths) {
+    if (!fs.existsSync(p)) {
+      return bridgeError("seedance", `Input image file not found: ${p}`, false);
+    }
+  }
+
   const params = parseParams(args.options, args.prompt, args.input_image_paths);
 
   try {
-    // Build request body for Seedance 2.0 API
     const body: Record<string, unknown> = {
       prompt: params.prompt,
       aspect_ratio: params.aspect_ratio,
@@ -122,7 +137,6 @@ export async function runSeedanceVideo(args: {
       watermark: params.watermark,
     };
 
-    // Image-to-video mode
     if (params.first_frame) {
       const img = readImageAsBase64(params.first_frame);
       body.first_frame = `data:${img.mimeType};base64,${img.data}`;
@@ -133,7 +147,6 @@ export async function runSeedanceVideo(args: {
       body.last_frame = `data:${img.mimeType};base64,${img.data}`;
     }
 
-    // Reference images for multimodal mode
     if (params.reference_images && params.reference_images.length > 0) {
       body.reference_images = params.reference_images.map((p) => {
         const img = readImageAsBase64(p);
@@ -141,7 +154,6 @@ export async function runSeedanceVideo(args: {
       });
     }
 
-    // Submit generation task
     const submitRes = await fetch("https://api.segmind.com/v1/seedance-2.0", {
       method: "POST",
       headers: {
@@ -160,7 +172,6 @@ export async function runSeedanceVideo(args: {
       );
     }
 
-    // Segmind returns the video directly as binary
     const videoBuffer = Buffer.from(await submitRes.arrayBuffer());
     const outPath = path.join(
       args.output_dir,

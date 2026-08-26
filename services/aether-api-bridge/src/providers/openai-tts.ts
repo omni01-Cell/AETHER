@@ -31,13 +31,18 @@ function parseParams(options: Record<string, unknown> | undefined): OpenAITTSPar
       ? (o.openai as Record<string, unknown>)
       : o;
 
+  const text = typeof cap.text === "string" ? cap.text : DEFAULTS.text;
+  const model = typeof cap.model === "string" ? cap.model : DEFAULTS.model;
+  const voice = typeof cap.voice === "string" ? cap.voice : DEFAULTS.voice;
+  const response_format = typeof cap.response_format === "string" ? cap.response_format : DEFAULTS.response_format;
+  const speed = typeof cap.speed === "number" ? cap.speed : DEFAULTS.speed;
+
   return {
-    text: (cap.text as string) ?? DEFAULTS.text,
-    model: (cap.model as string) ?? DEFAULTS.model,
-    voice: (cap.voice as string) ?? DEFAULTS.voice,
-    response_format:
-      (cap.response_format as string) ?? DEFAULTS.response_format,
-    speed: typeof cap.speed === "number" ? cap.speed : DEFAULTS.speed,
+    text,
+    model,
+    voice,
+    response_format,
+    speed,
   };
 }
 

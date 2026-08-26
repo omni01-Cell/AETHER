@@ -32,18 +32,18 @@ function parseParams(options: Record<string, unknown> | undefined): GeminiTTSPar
       ? (o.google as Record<string, unknown>)
       : o;
 
+  const text = typeof cap.text === "string" ? cap.text : DEFAULTS.text;
+  const voice_name = typeof cap.voice_name === "string" ? cap.voice_name : DEFAULTS.voice_name;
+  const speaking_rate = typeof cap.speaking_rate === "number" ? cap.speaking_rate : DEFAULTS.speaking_rate;
+  const pitch = typeof cap.pitch === "number" ? cap.pitch : DEFAULTS.pitch;
+  const volume_gain_db = typeof cap.volume_gain_db === "number" ? cap.volume_gain_db : DEFAULTS.volume_gain_db;
+
   return {
-    text: (cap.text as string) ?? DEFAULTS.text,
-    voice_name: (cap.voice_name as string) ?? DEFAULTS.voice_name,
-    speaking_rate:
-      typeof cap.speaking_rate === "number"
-        ? cap.speaking_rate
-        : DEFAULTS.speaking_rate,
-    pitch: typeof cap.pitch === "number" ? cap.pitch : DEFAULTS.pitch,
-    volume_gain_db:
-      typeof cap.volume_gain_db === "number"
-        ? cap.volume_gain_db
-        : DEFAULTS.volume_gain_db,
+    text,
+    voice_name,
+    speaking_rate,
+    pitch,
+    volume_gain_db,
   };
 }
 
@@ -76,7 +76,7 @@ export async function runGeminiTTS(args: {
   try {
     const ai = new GoogleGenAI({ apiKey });
 
-    const response = await ai.models.generateContent({
+    const generateOptions: Parameters<typeof ai.models.generateContent>[0] = {
       model: "gemini-3.1-flash-tts",
       contents: [{ role: "user", parts: [{ text: params.text }] }],
       config: {
@@ -88,8 +88,10 @@ export async function runGeminiTTS(args: {
             },
           },
         },
-      } as Parameters<typeof ai.models.generateContent>[0]["config"],
-    });
+      },
+    };
+
+    const response = await ai.models.generateContent(generateOptions);
 
     // Extract audio from response
     for (const candidate of response.candidates ?? []) {

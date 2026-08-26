@@ -35,18 +35,22 @@ function parseParams(options: Record<string, unknown> | undefined): ElevenLabsTT
       ? (o.elevenlabs as Record<string, unknown>)
       : o;
 
+  const text = typeof cap.text === "string" ? cap.text : DEFAULTS.text;
+  const model_id = typeof cap.model_id === "string" ? cap.model_id : DEFAULTS.model_id;
+  const voice_id = typeof cap.voice_id === "string" ? cap.voice_id : DEFAULTS.voice_id;
+  const stability = typeof cap.stability === "number" ? cap.stability : DEFAULTS.stability;
+  const similarity_boost = typeof cap.similarity_boost === "number" ? cap.similarity_boost : DEFAULTS.similarity_boost;
+  const style = typeof cap.style === "number" ? cap.style : DEFAULTS.style;
+  const output_format = typeof cap.output_format === "string" ? cap.output_format : DEFAULTS.output_format;
+
   return {
-    text: (cap.text as string) ?? DEFAULTS.text,
-    model_id: (cap.model_id as string) ?? DEFAULTS.model_id,
-    voice_id: (cap.voice_id as string) ?? DEFAULTS.voice_id,
-    stability: typeof cap.stability === "number" ? cap.stability : DEFAULTS.stability,
-    similarity_boost:
-      typeof cap.similarity_boost === "number"
-        ? cap.similarity_boost
-        : DEFAULTS.similarity_boost,
-    style: typeof cap.style === "number" ? cap.style : DEFAULTS.style,
-    output_format:
-      (cap.output_format as string) ?? DEFAULTS.output_format,
+    text,
+    model_id,
+    voice_id,
+    stability,
+    similarity_boost,
+    style,
+    output_format,
   };
 }
 
