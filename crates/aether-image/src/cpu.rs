@@ -186,67 +186,97 @@ fn apply_box_blur(pixmap: &mut Pixmap, radius: f32) {
     let r = radius.round() as i32;
     if r <= 0 { return; }
     
-    let w = pixmap.width() as i32;
-    let h = pixmap.height() as i32;
-    let pixels = pixmap.pixels().to_vec();
-    let mut temp = pixels.clone();
+    let w = pixmap.width() as usize;
+    let h = pixmap.height() as usize;
+    if w == 0 || h == 0 { return; }
+
+    let pixels = pixmap.pixels();
+    let mut temp = vec![tiny_skia::PremultipliedColorU8::from_rgba(0, 0, 0, 0).unwrap(); w * h];
+
+    let window_len = (2 * r + 1) as f32;
+    let inv_count = 1.0 / window_len;
     
-    // Horizontal blur pass
+    // Horizontal blur pass (read from pixmap pixels, write to temp)
+    // Optimization (Bolt): Use moving sliding-window accumulator (O(1) per pixel instead of O(radius))
+    // and pre-computed inverse window length to eliminate inner loops and floating point division.
     for y in 0..h {
+        let row_offset = y * w;
+        let p_left = pixels[row_offset];
+
+        let mut r_sum = p_left.red() as f32 * (r + 1) as f32;
+        let mut g_sum = p_left.green() as f32 * (r + 1) as f32;
+        let mut b_sum = p_left.blue() as f32 * (r + 1) as f32;
+        let mut a_sum = p_left.alpha() as f32 * (r + 1) as f32;
+
+        for dx in 1..=r {
+            let src_x = (dx as usize).min(w - 1);
+            let p = pixels[row_offset + src_x];
+            r_sum += p.red() as f32;
+            g_sum += p.green() as f32;
+            b_sum += p.blue() as f32;
+            a_sum += p.alpha() as f32;
+        }
+
         for x in 0..w {
-            let mut r_sum = 0.0;
-            let mut g_sum = 0.0;
-            let mut b_sum = 0.0;
-            let mut a_sum = 0.0;
-            let mut count = 0.0;
-            
-            for dx in -r..=r {
-                let nx = (x + dx).clamp(0, w - 1);
-                let p = pixels[(y * w + nx) as usize];
-                r_sum += p.red() as f32;
-                g_sum += p.green() as f32;
-                b_sum += p.blue() as f32;
-                a_sum += p.alpha() as f32;
-                count += 1.0;
-            }
-            
-            let dest = &mut temp[(y * w + x) as usize];
-            *dest = tiny_skia::ColorU8::from_rgba(
-                (r_sum / count) as u8,
-                (g_sum / count) as u8,
-                (b_sum / count) as u8,
-                (a_sum / count) as u8,
+            temp[row_offset + x] = tiny_skia::ColorU8::from_rgba(
+                (r_sum * inv_count) as u8,
+                (g_sum * inv_count) as u8,
+                (b_sum * inv_count) as u8,
+                (a_sum * inv_count) as u8,
             ).premultiply();
+            
+            if x + 1 < w {
+                let left_x = if x >= r as usize { x - r as usize } else { 0 };
+                let right_x = (x + 1 + r as usize).min(w - 1);
+                let p_left_elem = pixels[row_offset + left_x];
+                let p_right_elem = pixels[row_offset + right_x];
+
+                r_sum += p_right_elem.red() as f32 - p_left_elem.red() as f32;
+                g_sum += p_right_elem.green() as f32 - p_left_elem.green() as f32;
+                b_sum += p_right_elem.blue() as f32 - p_left_elem.blue() as f32;
+                a_sum += p_right_elem.alpha() as f32 - p_left_elem.alpha() as f32;
+            }
         }
     }
     
-    // Vertical blur pass
-    let pixels_h = temp.clone();
+    // Vertical blur pass (read from temp, write to pixmap pixels_mut)
     let pixels_mut = pixmap.pixels_mut();
     for x in 0..w {
+        let p_top = temp[x];
+
+        let mut r_sum = p_top.red() as f32 * (r + 1) as f32;
+        let mut g_sum = p_top.green() as f32 * (r + 1) as f32;
+        let mut b_sum = p_top.blue() as f32 * (r + 1) as f32;
+        let mut a_sum = p_top.alpha() as f32 * (r + 1) as f32;
+
+        for dy in 1..=r {
+            let src_y = (dy as usize).min(h - 1);
+            let p = temp[src_y * w + x];
+            r_sum += p.red() as f32;
+            g_sum += p.green() as f32;
+            b_sum += p.blue() as f32;
+            a_sum += p.alpha() as f32;
+        }
+
         for y in 0..h {
-            let mut r_sum = 0.0;
-            let mut g_sum = 0.0;
-            let mut b_sum = 0.0;
-            let mut a_sum = 0.0;
-            let mut count = 0.0;
-            
-            for dy in -r..=r {
-                let ny = (y + dy).clamp(0, h - 1);
-                let p = pixels_h[(ny * w + x) as usize];
-                r_sum += p.red() as f32;
-                g_sum += p.green() as f32;
-                b_sum += p.blue() as f32;
-                a_sum += p.alpha() as f32;
-                count += 1.0;
-            }
-            
-            pixels_mut[(y * w + x) as usize] = tiny_skia::ColorU8::from_rgba(
-                (r_sum / count) as u8,
-                (g_sum / count) as u8,
-                (b_sum / count) as u8,
-                (a_sum / count) as u8,
+            pixels_mut[y * w + x] = tiny_skia::ColorU8::from_rgba(
+                (r_sum * inv_count) as u8,
+                (g_sum * inv_count) as u8,
+                (b_sum * inv_count) as u8,
+                (a_sum * inv_count) as u8,
             ).premultiply();
+            
+            if y + 1 < h {
+                let top_y = if y >= r as usize { y - r as usize } else { 0 };
+                let bottom_y = (y + 1 + r as usize).min(h - 1);
+                let p_top_elem = temp[top_y * w + x];
+                let p_bottom_elem = temp[bottom_y * w + x];
+
+                r_sum += p_bottom_elem.red() as f32 - p_top_elem.red() as f32;
+                g_sum += p_bottom_elem.green() as f32 - p_top_elem.green() as f32;
+                b_sum += p_bottom_elem.blue() as f32 - p_top_elem.blue() as f32;
+                a_sum += p_bottom_elem.alpha() as f32 - p_top_elem.alpha() as f32;
+            }
         }
     }
 }
