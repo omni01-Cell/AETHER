@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { GoogleGenAI, Modality } from "@google/genai";
+import { GoogleGenAI, Modality, ThinkingLevel } from "@google/genai";
 import type { BridgeArtifact, BridgeFailure, BridgeSuccess } from "../protocol.js";
 import { bridgeError } from "../protocol.js";
 
@@ -35,6 +35,26 @@ const DEFAULTS: NanoBananaImageEditParams = {
   search_grounding: false,
 };
 
+const VALID_PERSON_GEN = new Set<NanoBananaImageEditParams["person_generation"]>([
+  "dont_allow",
+  "allow_adult",
+  "allow_all",
+]);
+
+const VALID_THINKING = new Set<NanoBananaImageEditParams["thinking_level"]>([
+  "minimal",
+  "low",
+  "medium",
+  "high",
+]);
+
+const THINKING_LEVEL_MAP: Record<NanoBananaImageEditParams["thinking_level"], ThinkingLevel> = {
+  minimal: ThinkingLevel.MINIMAL,
+  low: ThinkingLevel.LOW,
+  medium: ThinkingLevel.MEDIUM,
+  high: ThinkingLevel.HIGH,
+};
+
 function parseParams(options: Record<string, unknown> | undefined): NanoBananaImageEditParams {
   const o = options ?? {};
   const cap =
@@ -45,31 +65,44 @@ function parseParams(options: Record<string, unknown> | undefined): NanoBananaIm
   const thinking = cap.thinking_level ?? cap.reasoning_effort;
   const imageSize = cap.image_size ?? cap.resolution;
 
+  const api_model = typeof cap.api_model === "string" ? cap.api_model : DEFAULTS.api_model;
+  const aspect_ratio = typeof cap.aspect_ratio === "string" ? cap.aspect_ratio : DEFAULTS.aspect_ratio;
+  const image_size = typeof imageSize === "string" ? imageSize : DEFAULTS.image_size;
+  const person_generation =
+    typeof cap.person_generation === "string" && VALID_PERSON_GEN.has(cap.person_generation as NanoBananaImageEditParams["person_generation"])
+      ? (cap.person_generation as NanoBananaImageEditParams["person_generation"])
+      : DEFAULTS.person_generation;
+  const temperature = typeof cap.temperature === "number" ? cap.temperature : DEFAULTS.temperature;
+  const top_p = typeof cap.top_p === "number" ? cap.top_p : DEFAULTS.top_p;
+  const thinking_level =
+    typeof thinking === "string" && VALID_THINKING.has(thinking as NanoBananaImageEditParams["thinking_level"])
+      ? (thinking as NanoBananaImageEditParams["thinking_level"])
+      : DEFAULTS.thinking_level;
+  const number_of_images =
+    typeof cap.number_of_images === "number" && cap.number_of_images > 0
+      ? cap.number_of_images
+      : DEFAULTS.number_of_images;
+  const seed = typeof cap.seed === "number" ? cap.seed : undefined;
+  const search_grounding =
+    typeof cap.search_grounding === "boolean"
+      ? cap.search_grounding
+      : DEFAULTS.search_grounding;
+
   return {
-    api_model: (cap.api_model as string) ?? DEFAULTS.api_model,
-    aspect_ratio: (cap.aspect_ratio as string) ?? DEFAULTS.aspect_ratio,
-    image_size: (imageSize as string) ?? DEFAULTS.image_size,
-    person_generation:
-      (cap.person_generation as NanoBananaImageEditParams["person_generation"]) ??
-      DEFAULTS.person_generation,
-    temperature:
-      typeof cap.temperature === "number" ? cap.temperature : DEFAULTS.temperature,
-    top_p: typeof cap.top_p === "number" ? cap.top_p : DEFAULTS.top_p,
-    thinking_level:
-      (thinking as NanoBananaImageEditParams["thinking_level"]) ?? DEFAULTS.thinking_level,
-    number_of_images:
-      typeof cap.number_of_images === "number"
-        ? cap.number_of_images
-        : DEFAULTS.number_of_images,
-    seed: typeof cap.seed === "number" ? cap.seed : undefined,
-    search_grounding:
-      typeof cap.search_grounding === "boolean"
-        ? cap.search_grounding
-        : DEFAULTS.search_grounding,
+    api_model,
+    aspect_ratio,
+    image_size,
+    person_generation,
+    temperature,
+    top_p,
+    thinking_level,
+    number_of_images,
+    seed,
+    search_grounding,
   };
 }
 
-function readImagePart(filePath: string) {
+function readImagePart(filePath: string): { inlineData: { mimeType: string; data: string } } {
   const data = fs.readFileSync(filePath).toString("base64");
   const ext = path.extname(filePath).toLowerCase();
   let mimeType = "image/png";
@@ -111,6 +144,12 @@ export async function runNanoBananaImageEdit(args: {
     );
   }
 
+  for (const p of args.input_image_paths) {
+    if (!fs.existsSync(p)) {
+      return bridgeError("nano-banana", `Input image file not found: ${p}`, false);
+    }
+  }
+
   const params = parseParams(args.options);
   const ai = new GoogleGenAI({ apiKey });
 
@@ -120,30 +159,22 @@ export async function runNanoBananaImageEdit(args: {
       ...args.input_image_paths.map((p) => readImagePart(p)),
     ];
 
-    const config: Record<string, unknown> = {
-      responseModalities: [Modality.TEXT, Modality.IMAGE],
-      temperature: params.temperature,
-      topP: params.top_p,
-      imageConfig: {
-        aspectRatio: params.aspect_ratio,
-        imageSize: params.image_size,
-        personGeneration: params.person_generation,
-      },
-      thinkingConfig: { thinkingLevel: params.thinking_level },
-    };
-
-    if (params.seed !== undefined) {
-      config.seed = params.seed;
-    }
-
-    if (params.search_grounding) {
-      config.tools = [{ googleSearch: {} }];
-    }
-
     const response = await ai.models.generateContent({
       model: params.api_model,
       contents: [{ role: "user", parts }],
-      config: config as Parameters<typeof ai.models.generateContent>[0]["config"],
+      config: {
+        responseModalities: [Modality.TEXT, Modality.IMAGE],
+        temperature: params.temperature,
+        topP: params.top_p,
+        imageConfig: {
+          aspectRatio: params.aspect_ratio,
+          imageSize: params.image_size,
+          personGeneration: params.person_generation,
+        },
+        thinkingConfig: { thinkingLevel: THINKING_LEVEL_MAP[params.thinking_level] },
+        ...(params.seed !== undefined ? { seed: params.seed } : {}),
+        ...(params.search_grounding ? { tools: [{ googleSearch: {} }] } : {}),
+      },
     });
 
     const artifacts: BridgeArtifact[] = [];

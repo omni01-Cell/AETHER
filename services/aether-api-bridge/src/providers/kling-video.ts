@@ -32,6 +32,8 @@ const DEFAULTS: KlingVideoParams = {
   multi_shots: false,
 };
 
+const VALID_MODES = new Set<KlingVideoParams["mode"]>(["std", "pro", "4k"]);
+
 function parseParams(
   options: Record<string, unknown> | undefined,
   prompt: string,
@@ -43,22 +45,28 @@ function parseParams(
       ? (o.kuaishou as Record<string, unknown>)
       : o;
 
+  const aspect_ratio = typeof cap.aspect_ratio === "string" ? cap.aspect_ratio : DEFAULTS.aspect_ratio;
+  const duration = typeof cap.duration === "number" ? cap.duration : DEFAULTS.duration;
+  const mode =
+    typeof cap.mode === "string" && VALID_MODES.has(cap.mode as KlingVideoParams["mode"])
+      ? (cap.mode as KlingVideoParams["mode"])
+      : DEFAULTS.mode;
+  const generate_audio = typeof cap.generate_audio === "boolean" ? cap.generate_audio : DEFAULTS.generate_audio;
+  const cfg_scale = typeof cap.cfg_scale === "number" ? cap.cfg_scale : DEFAULTS.cfg_scale;
+  const seed = typeof cap.seed === "number" ? cap.seed : DEFAULTS.seed;
+  const multi_shots = typeof cap.multi_shots === "boolean" ? cap.multi_shots : DEFAULTS.multi_shots;
+
   const params: KlingVideoParams = {
     prompt,
-    aspect_ratio: (cap.aspect_ratio as string) ?? DEFAULTS.aspect_ratio,
-    duration: typeof cap.duration === "number" ? cap.duration : DEFAULTS.duration,
-    mode: (cap.mode as KlingVideoParams["mode"]) ?? DEFAULTS.mode,
-    generate_audio:
-      typeof cap.generate_audio === "boolean"
-        ? cap.generate_audio
-        : DEFAULTS.generate_audio,
-    cfg_scale: typeof cap.cfg_scale === "number" ? cap.cfg_scale : DEFAULTS.cfg_scale,
-    seed: typeof cap.seed === "number" ? cap.seed : DEFAULTS.seed,
-    multi_shots:
-      typeof cap.multi_shots === "boolean" ? cap.multi_shots : DEFAULTS.multi_shots,
+    aspect_ratio,
+    duration,
+    mode,
+    generate_audio,
+    cfg_scale,
+    seed,
+    multi_shots,
   };
 
-  // Image-to-video: first frame from input images
   if (inputImagePaths.length > 0) {
     params.first_frame = inputImagePaths[0];
     if (inputImagePaths.length > 1) {
@@ -96,40 +104,42 @@ export async function runKlingVideo(args: {
     );
   }
 
+  for (const p of args.input_image_paths) {
+    if (!fs.existsSync(p)) {
+      return bridgeError("kling", `Input image file not found: ${p}`, false);
+    }
+  }
+
   const params = parseParams(args.options, args.prompt, args.input_image_paths);
 
   try {
-    // Build request body for Kling API
-    const body: Record<string, unknown> = {
-      model: `kling-v3-${params.mode}`,
-      input: {
-        prompt: params.prompt,
-        aspect_ratio: params.aspect_ratio,
-        duration: params.duration,
-        generate_audio: params.generate_audio,
-        cfg_scale: params.cfg_scale,
-        seed: params.seed,
-        multi_shots: params.multi_shots,
-        negative_prompt: "blur, distort, and low quality",
-      },
+    const inputObj: Record<string, unknown> = {
+      prompt: params.prompt,
+      aspect_ratio: params.aspect_ratio,
+      duration: params.duration,
+      generate_audio: params.generate_audio,
+      cfg_scale: params.cfg_scale,
+      seed: params.seed,
+      multi_shots: params.multi_shots,
+      negative_prompt: "blur, distort, and low quality",
     };
 
-    // Image-to-video mode
     if (params.first_frame) {
       const img = readImageAsBase64(params.first_frame);
-      (body.input as Record<string, unknown>).image_urls = [
-        `data:${img.mimeType};base64,${img.data}`,
-      ];
+      const imageUrls: string[] = [`data:${img.mimeType};base64,${img.data}`];
 
       if (params.last_frame) {
         const lastImg = readImageAsBase64(params.last_frame);
-        ((body.input as Record<string, unknown>).image_urls as string[]).push(
-          `data:${lastImg.mimeType};base64,${lastImg.data}`
-        );
+        imageUrls.push(`data:${lastImg.mimeType};base64,${lastImg.data}`);
       }
+      inputObj.image_urls = imageUrls;
     }
 
-    // Submit generation task
+    const body: Record<string, unknown> = {
+      model: `kling-v3-${params.mode}`,
+      input: inputObj,
+    };
+
     const submitRes = await fetch("https://api.klingai.com/v1/videos/generations", {
       method: "POST",
       headers: {
@@ -148,26 +158,23 @@ export async function runKlingVideo(args: {
       );
     }
 
-    const submitData = (await submitRes.json()) as {
-      code: number;
-      data?: { task_id: string };
-      message?: string;
-    };
+    const submitDataObj = (await submitRes.json()) as Record<string, unknown>;
+    const code = typeof submitDataObj.code === "number" ? submitDataObj.code : 0;
+    const dataField = typeof submitDataObj.data === "object" && submitDataObj.data !== null ? (submitDataObj.data as Record<string, unknown>) : undefined;
+    const taskId = typeof dataField?.task_id === "string" ? dataField.task_id : undefined;
+    const message = typeof submitDataObj.message === "string" ? submitDataObj.message : "Unknown error";
 
-    if (submitData.code !== 200 || !submitData.data?.task_id) {
+    if (code !== 200 || !taskId) {
       return bridgeError(
         "kling",
-        `Kling API error: ${submitData.message ?? "Unknown error"}`,
+        `Kling API error: ${message}`,
         false
       );
     }
 
-    const taskId = submitData.data.task_id;
-
-    // Poll for completion
     let status = "submitted";
     let videoUrl: string | null = null;
-    const maxAttempts = 120; // 10 minutes max (5s intervals)
+    const maxAttempts = 120;
     let attempt = 0;
 
     while (attempt < maxAttempts) {
@@ -187,23 +194,26 @@ export async function runKlingVideo(args: {
         continue;
       }
 
-      const statusData = (await statusRes.json()) as {
-        code: number;
-        data?: {
-          status: string;
-          task_result?: { videos?: Array<{ url: string }> };
-        };
-      };
+      const statusDataObj = (await statusRes.json()) as Record<string, unknown>;
+      const statusCode = typeof statusDataObj.code === "number" ? statusDataObj.code : 0;
+      const statusData = typeof statusDataObj.data === "object" && statusDataObj.data !== null ? (statusDataObj.data as Record<string, unknown>) : undefined;
 
-      if (statusData.code !== 200 || !statusData.data) {
+      if (statusCode !== 200 || !statusData) {
         continue;
       }
 
-      status = statusData.data.status;
+      status = typeof statusData.status === "string" ? statusData.status : "unknown";
 
-      if (status === "succeed" && statusData.data.task_result?.videos?.[0]) {
-        videoUrl = statusData.data.task_result.videos[0].url;
-        break;
+      if (status === "succeed") {
+        const result = typeof statusData.task_result === "object" && statusData.task_result !== null ? (statusData.task_result as Record<string, unknown>) : undefined;
+        const videos = Array.isArray(result?.videos) ? result.videos : undefined;
+        if (videos && videos.length > 0 && typeof videos[0] === "object" && videos[0] !== null) {
+          const firstVid = videos[0] as Record<string, unknown>;
+          if (typeof firstVid.url === "string") {
+            videoUrl = firstVid.url;
+            break;
+          }
+        }
       }
 
       if (status === "failed") {
@@ -219,7 +229,6 @@ export async function runKlingVideo(args: {
       );
     }
 
-    // Download the video
     const videoRes = await fetch(videoUrl);
     if (!videoRes.ok) {
       return bridgeError(

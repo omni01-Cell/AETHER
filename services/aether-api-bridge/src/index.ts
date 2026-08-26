@@ -1,13 +1,83 @@
 #!/usr/bin/env node
 import fs from "node:fs";
-import type { BridgeRequest, BridgeResponse } from "./protocol.js";
+import type { BridgeOperation, BridgeRequest, BridgeResponse } from "./protocol.js";
 import { BRIDGE_VERSION, bridgeError } from "./protocol.js";
 import { dispatch } from "./router.js";
+
+const VALID_OPERATIONS = new Set<BridgeOperation>([
+  "image_edit",
+  "chat_completions",
+  "video_generate",
+  "voice_generate",
+  "music_generate",
+]);
+
+function isBridgeRequest(obj: unknown): obj is BridgeRequest {
+  if (typeof obj !== "object" || obj === null) {
+    return false;
+  }
+  const r = obj as Record<string, unknown>;
+
+  if (typeof r.version !== "number") {
+    return false;
+  }
+  if (typeof r.operation !== "string" || !VALID_OPERATIONS.has(r.operation as BridgeOperation)) {
+    return false;
+  }
+  if (typeof r.model_id !== "string") {
+    return false;
+  }
+  if (r.bridge_handler !== undefined && typeof r.bridge_handler !== "string") {
+    return false;
+  }
+  if (r.agent !== undefined && typeof r.agent !== "string") {
+    return false;
+  }
+  if (r.provider !== undefined && typeof r.provider !== "string") {
+    return false;
+  }
+  if (r.api_model !== undefined && typeof r.api_model !== "string") {
+    return false;
+  }
+  if (r.prompt !== undefined && typeof r.prompt !== "string") {
+    return false;
+  }
+  if (r.input_image_paths !== undefined) {
+    if (!Array.isArray(r.input_image_paths) || !r.input_image_paths.every((p) => typeof p === "string")) {
+      return false;
+    }
+  }
+  if (r.output_dir !== undefined && typeof r.output_dir !== "string") {
+    return false;
+  }
+  if (r.messages !== undefined) {
+    if (!Array.isArray(r.messages)) {
+      return false;
+    }
+    for (const msg of r.messages) {
+      if (typeof msg !== "object" || msg === null) return false;
+      const m = msg as Record<string, unknown>;
+      if (typeof m.role !== "string" || typeof m.content !== "string") return false;
+    }
+  }
+  if (r.tools !== undefined && !Array.isArray(r.tools)) {
+    return false;
+  }
+  if (r.options !== undefined && (typeof r.options !== "object" || r.options === null)) {
+    return false;
+  }
+
+  return true;
+}
 
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) {
-    chunks.push(chunk as Buffer);
+    if (Buffer.isBuffer(chunk)) {
+      chunks.push(chunk);
+    } else {
+      chunks.push(Buffer.from(String(chunk), "utf8"));
+    }
   }
   return Buffer.concat(chunks).toString("utf8");
 }
@@ -24,14 +94,22 @@ async function main(): Promise<void> {
     return;
   }
 
-  let req: BridgeRequest;
+  let parsed: unknown;
   try {
-    req = JSON.parse(raw) as BridgeRequest;
+    parsed = JSON.parse(raw);
   } catch {
     writeResponse(bridgeError("bridge", "Invalid JSON on stdin", false));
     process.exit(1);
     return;
   }
+
+  if (!isBridgeRequest(parsed)) {
+    writeResponse(bridgeError("bridge", "Invalid BridgeRequest schema on stdin", false));
+    process.exit(1);
+    return;
+  }
+
+  const req: BridgeRequest = parsed;
 
   if (req.version !== BRIDGE_VERSION) {
     writeResponse(

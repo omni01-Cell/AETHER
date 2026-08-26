@@ -32,17 +32,15 @@ function parseParams(
       ? (o.google as Record<string, unknown>)
       : o;
 
+  const aspect_ratio = typeof cap.aspect_ratio === "string" ? cap.aspect_ratio : DEFAULTS.aspect_ratio;
+  const duration_sec = typeof cap.duration_sec === "number" ? cap.duration_sec : DEFAULTS.duration_sec;
+  const negative_prompt = typeof cap.negative_prompt === "string" ? cap.negative_prompt : undefined;
+
   return {
     prompt,
-    aspect_ratio: (cap.aspect_ratio as string) ?? DEFAULTS.aspect_ratio,
-    duration_sec:
-      typeof cap.duration_sec === "number"
-        ? cap.duration_sec
-        : DEFAULTS.duration_sec,
-    negative_prompt:
-      typeof cap.negative_prompt === "string"
-        ? cap.negative_prompt
-        : undefined,
+    aspect_ratio,
+    duration_sec,
+    negative_prompt,
   };
 }
 
@@ -65,112 +63,62 @@ export async function runVeoVideo(args: {
     );
   }
 
+  for (const p of args.input_image_paths) {
+    if (!fs.existsSync(p)) {
+      return bridgeError("veo", `Input image file not found: ${p}`, false);
+    }
+  }
+
   const params = parseParams(args.options, args.prompt);
 
   try {
     const ai = new GoogleGenAI({ apiKey });
 
-    // Build config for Veo
-    const config: Record<string, unknown> = {
-      aspectRatio: params.aspect_ratio,
-      durationSec: params.duration_sec,
-    };
-
-    if (params.negative_prompt) {
-      config.negativePrompt = params.negative_prompt;
-    }
-
-    // If we have input images, use image-to-video
+    let imageParam: { imageBytes: string; mimeType: string } | undefined;
     if (args.input_image_paths.length > 0) {
-      const imageParts = args.input_image_paths.map((p) => {
-        const data = fs.readFileSync(p).toString("base64");
-        const ext = path.extname(p).toLowerCase();
-        let mimeType = "image/png";
-        if (ext === ".jpg" || ext === ".jpeg") mimeType = "image/jpeg";
-        if (ext === ".webp") mimeType = "image/webp";
-        return { inlineData: { mimeType, data } };
-      });
-
-      const response = await ai.models.generateContent({
-        model: "veo-3.1",
-        contents: [{ role: "user", parts: [...imageParts, { text: params.prompt }] }],
-        config: config as Parameters<typeof ai.models.generateContent>[0]["config"],
-      });
-
-      // Extract video from response
-      const artifacts: BridgeArtifact[] = [];
-      for (const candidate of response.candidates ?? []) {
-        for (const part of candidate.content?.parts ?? []) {
-          if (part.inlineData?.data) {
-            const mime = part.inlineData.mimeType ?? "video/mp4";
-            const ext = mime.includes("webm") ? "webm" : "mp4";
-            const outPath = path.join(
-              args.output_dir,
-              `veo-${Date.now()}-${artifacts.length}.${ext}`
-            );
-            fs.writeFileSync(outPath, Buffer.from(part.inlineData.data, "base64"));
-            artifacts.push({
-              path: outPath,
-              mime_type: mime,
-              metadata: {
-                provider: "google",
-                model: "veo-3.1",
-                aspect_ratio: params.aspect_ratio,
-                duration_sec: params.duration_sec,
-              },
-            });
-          }
-        }
-      }
-
-      if (artifacts.length === 0) {
-        return bridgeError("veo", "Veo returned no video in response", true);
-      }
-
-      return {
-        ok: true,
-        provider: "google",
-        provider_job_id: `veo-${Date.now()}`,
-        status: "ready",
-        artifacts,
-        metadata: {
-          api: "generateContent",
-          model: "veo-3.1",
-          params,
-        },
-      };
+      const firstPath = args.input_image_paths[0];
+      const data = fs.readFileSync(firstPath).toString("base64");
+      const ext = path.extname(firstPath).toLowerCase();
+      let mimeType = "image/png";
+      if (ext === ".jpg" || ext === ".jpeg") mimeType = "image/jpeg";
+      if (ext === ".webp") mimeType = "image/webp";
+      imageParam = { imageBytes: data, mimeType };
     }
 
-    // Text-to-video mode
-    const response = await ai.models.generateContent({
+    const operation = await ai.models.generateVideos({
       model: "veo-3.1",
-      contents: [{ role: "user", parts: [{ text: params.prompt }] }],
-      config: config as Parameters<typeof ai.models.generateContent>[0]["config"],
+      prompt: params.prompt,
+      ...(imageParam ? { image: imageParam } : {}),
+      config: {
+        aspectRatio: params.aspect_ratio,
+        ...(params.negative_prompt ? { negativePrompt: params.negative_prompt } : {}),
+      },
     });
 
-    // Extract video from response
+    const response = operation.response;
+    const generatedVideos = response?.generatedVideos ?? [];
     const artifacts: BridgeArtifact[] = [];
-    for (const candidate of response.candidates ?? []) {
-      for (const part of candidate.content?.parts ?? []) {
-        if (part.inlineData?.data) {
-          const mime = part.inlineData.mimeType ?? "video/mp4";
-          const ext = mime.includes("webm") ? "webm" : "mp4";
-          const outPath = path.join(
-            args.output_dir,
-            `veo-${Date.now()}-${artifacts.length}.${ext}`
-          );
-          fs.writeFileSync(outPath, Buffer.from(part.inlineData.data, "base64"));
-          artifacts.push({
-            path: outPath,
-            mime_type: mime,
-            metadata: {
-              provider: "google",
-              model: "veo-3.1",
-              aspect_ratio: params.aspect_ratio,
-              duration_sec: params.duration_sec,
-            },
-          });
-        }
+
+    for (let i = 0; i < generatedVideos.length; i++) {
+      const vid = generatedVideos[i];
+      const videoBytes = vid.video?.videoBytes;
+      if (videoBytes) {
+        const ext = "mp4";
+        const outPath = path.join(
+          args.output_dir,
+          `veo-${Date.now()}-${i}.${ext}`
+        );
+        fs.writeFileSync(outPath, Buffer.from(videoBytes, "base64"));
+        artifacts.push({
+          path: outPath,
+          mime_type: "video/mp4",
+          metadata: {
+            provider: "google",
+            model: "veo-3.1",
+            aspect_ratio: params.aspect_ratio,
+            duration_sec: params.duration_sec,
+          },
+        });
       }
     }
 
@@ -185,7 +133,7 @@ export async function runVeoVideo(args: {
       status: "ready",
       artifacts,
       metadata: {
-        api: "generateContent",
+        api: "generateVideos",
         model: "veo-3.1",
         params,
       },
