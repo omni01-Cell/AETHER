@@ -185,33 +185,37 @@ impl RenderBackend for CpuBackend {
 fn apply_box_blur(pixmap: &mut Pixmap, radius: f32) {
     let r = radius.round() as i32;
     if r <= 0 { return; }
-    
+
     let w = pixmap.width() as i32;
     let h = pixmap.height() as i32;
-    let pixels = pixmap.pixels().to_vec();
-    let mut temp = pixels.clone();
+    let total_pixels = (w * h) as usize;
+    if total_pixels == 0 { return; }
+
+    let count = (2 * r + 1) as u32;
+    let src_pixels = pixmap.pixels();
     
-    // Horizontal blur pass
+    // Allocate a single temporary buffer for the intermediate horizontal blur pass.
+    let mut temp = vec![tiny_skia::PremultipliedColorU8::TRANSPARENT; total_pixels];
+
+    // Horizontal blur pass: read from src_pixels (ref), write to temp
     for y in 0..h {
+        let row_offset = (y * w) as usize;
         for x in 0..w {
-            let mut r_sum = 0.0;
-            let mut g_sum = 0.0;
-            let mut b_sum = 0.0;
-            let mut a_sum = 0.0;
-            let mut count = 0.0;
-            
+            let mut r_sum = 0u32;
+            let mut g_sum = 0u32;
+            let mut b_sum = 0u32;
+            let mut a_sum = 0u32;
+
             for dx in -r..=r {
-                let nx = (x + dx).clamp(0, w - 1);
-                let p = pixels[(y * w + nx) as usize];
-                r_sum += p.red() as f32;
-                g_sum += p.green() as f32;
-                b_sum += p.blue() as f32;
-                a_sum += p.alpha() as f32;
-                count += 1.0;
+                let nx = (x + dx).clamp(0, w - 1) as usize;
+                let p = src_pixels[row_offset + nx];
+                r_sum += p.red() as u32;
+                g_sum += p.green() as u32;
+                b_sum += p.blue() as u32;
+                a_sum += p.alpha() as u32;
             }
-            
-            let dest = &mut temp[(y * w + x) as usize];
-            *dest = tiny_skia::ColorU8::from_rgba(
+
+            temp[row_offset + x as usize] = tiny_skia::ColorU8::from_rgba(
                 (r_sum / count) as u8,
                 (g_sum / count) as u8,
                 (b_sum / count) as u8,
@@ -219,29 +223,27 @@ fn apply_box_blur(pixmap: &mut Pixmap, radius: f32) {
             ).premultiply();
         }
     }
-    
-    // Vertical blur pass
-    let pixels_h = temp.clone();
-    let pixels_mut = pixmap.pixels_mut();
+
+    // Vertical blur pass: read from temp slice, write directly to pixmap pixels_mut
+    let dest_pixels = pixmap.pixels_mut();
     for x in 0..w {
+        let col_x = x as usize;
         for y in 0..h {
-            let mut r_sum = 0.0;
-            let mut g_sum = 0.0;
-            let mut b_sum = 0.0;
-            let mut a_sum = 0.0;
-            let mut count = 0.0;
-            
+            let mut r_sum = 0u32;
+            let mut g_sum = 0u32;
+            let mut b_sum = 0u32;
+            let mut a_sum = 0u32;
+
             for dy in -r..=r {
-                let ny = (y + dy).clamp(0, h - 1);
-                let p = pixels_h[(ny * w + x) as usize];
-                r_sum += p.red() as f32;
-                g_sum += p.green() as f32;
-                b_sum += p.blue() as f32;
-                a_sum += p.alpha() as f32;
-                count += 1.0;
+                let ny = (y + dy).clamp(0, h - 1) as usize;
+                let p = temp[ny * (w as usize) + col_x];
+                r_sum += p.red() as u32;
+                g_sum += p.green() as u32;
+                b_sum += p.blue() as u32;
+                a_sum += p.alpha() as u32;
             }
-            
-            pixels_mut[(y * w + x) as usize] = tiny_skia::ColorU8::from_rgba(
+
+            dest_pixels[(y * w + x) as usize] = tiny_skia::ColorU8::from_rgba(
                 (r_sum / count) as u8,
                 (g_sum / count) as u8,
                 (b_sum / count) as u8,

@@ -371,5 +371,38 @@ mod tests {
         
         let _ = fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn test_box_blur_filter() {
+        use aether_core::{CompositionGraph, RefRegistry, Node, NodeKind, Connection, FilterKind, RenderBackend};
+
+        let dir = temp_test_dir();
+        let cache_dir = dir.join("cache");
+
+        let r1 = Ref { kind: RefKind::Image, id: 1 };
+        let asset1 = create_canvas(200, 200, "white", r1, &cache_dir).unwrap();
+
+        let registry = RefRegistry::new();
+        registry.register(r1, asset1).unwrap();
+
+        let mut graph = CompositionGraph::new();
+        graph.add_node(Node { id: 1, kind: NodeKind::Source(r1) });
+        graph.add_node(Node { id: 2, kind: NodeKind::Filter { kind: FilterKind::GaussianBlur { radius: 5.0 } } });
+        graph.add_node(Node { id: 3, kind: NodeKind::Output });
+
+        graph.connect(Connection { from_node: 1, from_port: 0, to_node: 2, to_port: 0 }).unwrap();
+        graph.connect(Connection { from_node: 2, from_port: 0, to_node: 3, to_port: 0 }).unwrap();
+        graph.output_node = Some(3);
+
+        let cpu = cpu::CpuBackend;
+        let start = std::time::Instant::now();
+        let cpu_data = cpu.render(&graph, 200, 200, &registry).unwrap();
+        let duration = start.elapsed();
+        println!("Box blur 200x200 (r=5) elapsed time: {:?}", duration);
+
+        assert_eq!(cpu_data.len(), 200 * 200 * 4);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
 }
 
