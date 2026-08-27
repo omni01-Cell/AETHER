@@ -54,6 +54,7 @@ impl BiquadFilter {
 
 pub struct DynamicCompressor {
     threshold_db: f32,
+    threshold_linear: f32,
     ratio: f32,
     attack_s: f32,
     release_s: f32,
@@ -70,8 +71,11 @@ impl DynamicCompressor {
         sample_rate: u32,
         channels: usize,
     ) -> Self {
+        // Optimization (Bolt): Pre-calculated linear threshold outside the inner processing loop to elide expensive decibel-space conversions (log10, powf) when signal is below threshold.
+        let threshold_linear = 10.0f32.powf(threshold_db / 20.0);
         DynamicCompressor {
             threshold_db,
+            threshold_linear,
             ratio,
             attack_s: attack_ms / 1000.0,
             release_s: release_ms / 1000.0,
@@ -84,9 +88,6 @@ impl DynamicCompressor {
         let channels = samples.len();
         let att_coef = (-1.0 / (self.sample_rate * self.attack_s)).exp();
         let rel_coef = (-1.0 / (self.sample_rate * self.release_s)).exp();
-        
-        // Optimization (Bolt): Pre-calculated linear threshold outside the inner processing loop to elide expensive decibel-space conversions (log10, powf) when signal is below threshold.
-        let threshold_linear = 10.0f32.powf(self.threshold_db / 20.0);
 
         for ch in 0..channels {
             if ch >= self.envelope.len() {
@@ -103,7 +104,7 @@ impl DynamicCompressor {
                     *env = rel_coef * (*env) + (1.0 - rel_coef) * input_mag;
                 }
                 
-                if *env > threshold_linear {
+                if *env > self.threshold_linear {
                     let env_db = 20.0 * env.log10();
                     let overshoot = env_db - self.threshold_db;
                     let target_gain_db = self.threshold_db + overshoot / self.ratio;
@@ -197,9 +198,10 @@ impl MultiTrackMixer {
         
         for ch in 0..channels {
             for i in 0..output_len {
+                // Optimization (Bolt): Replace expensive floating-point floor/ceil operations with safe integer casts in inner DSP loop, matching exact ceil semantics to prevent dropped samples on boundary.
                 let src_idx = i as f64 / ratio;
-                let low = src_idx.floor() as usize;
-                let high = src_idx.ceil() as usize;
+                let low = src_idx as usize;
+                let high = if src_idx == low as f64 { low } else { low + 1 };
                 let frac = src_idx - low as f64;
                 
                 if low < input_len && high < input_len {
