@@ -188,8 +188,12 @@ fn apply_box_blur(pixmap: &mut Pixmap, radius: f32) {
     
     let w = pixmap.width() as i32;
     let h = pixmap.height() as i32;
+    let len = (w * h) as usize;
     let pixels = pixmap.pixels().to_vec();
-    let mut temp = pixels.clone();
+
+    // Optimization (Bolt): Allocate temp buffer without full pixel clone, write horizontal blur pass into temp,
+    // then write vertical blur pass directly into pixmap.pixels_mut() to avoid redundant slice cloning (`temp.clone()`).
+    let mut temp = vec![tiny_skia::PremultipliedColorU8::from_rgba(0, 0, 0, 0).unwrap(); len];
     
     // Horizontal blur pass
     for y in 0..h {
@@ -210,8 +214,7 @@ fn apply_box_blur(pixmap: &mut Pixmap, radius: f32) {
                 count += 1.0;
             }
             
-            let dest = &mut temp[(y * w + x) as usize];
-            *dest = tiny_skia::ColorU8::from_rgba(
+            temp[(y * w + x) as usize] = tiny_skia::ColorU8::from_rgba(
                 (r_sum / count) as u8,
                 (g_sum / count) as u8,
                 (b_sum / count) as u8,
@@ -220,8 +223,7 @@ fn apply_box_blur(pixmap: &mut Pixmap, radius: f32) {
         }
     }
     
-    // Vertical blur pass
-    let pixels_h = temp.clone();
+    // Vertical blur pass: read from temp, write directly to pixmap.pixels_mut()
     let pixels_mut = pixmap.pixels_mut();
     for x in 0..w {
         for y in 0..h {
@@ -233,7 +235,7 @@ fn apply_box_blur(pixmap: &mut Pixmap, radius: f32) {
             
             for dy in -r..=r {
                 let ny = (y + dy).clamp(0, h - 1);
-                let p = pixels_h[(ny * w + x) as usize];
+                let p = temp[(ny * w + x) as usize];
                 r_sum += p.red() as f32;
                 g_sum += p.green() as f32;
                 b_sum += p.blue() as f32;
