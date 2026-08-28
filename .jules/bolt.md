@@ -4,3 +4,6 @@
 ## 2025-06-03 - Optimizing MultiTrackMixer audio mixing loop
 **Learning:** Explicit indexing in inner DSP loops (`mixed[0][sample_idx] += ...`) forces Rust to perform redundant runtime bounds checks, creating a significant performance bottleneck.
 **Action:** Use iterators (e.g., `iter_mut().zip()`) and slice splitting (`split_at_mut()`) on parallel buffers to completely elide bounds checks and safely handle mutable aliasing.
+## 2025-06-03 - Optimizing box blur buffer allocations
+**Learning:** In image processing loops like 2-pass separable box blur, initializing intermediate buffers by cloning input pixel buffers (`pixels.clone()`) and cloning temporary buffers between passes (`temp.clone()`) causes redundant allocations and unnecessary memory copies for full $W \times H$ pixel arrays.
+**Action:** Initialize temporary pixel buffers with zeroed/default values once, write the first pass into `temp`, and read directly from `temp` to write the second pass directly into target `pixmap.pixels_mut()`.
