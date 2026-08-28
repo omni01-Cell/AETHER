@@ -195,19 +195,22 @@ impl MultiTrackMixer {
         
         let mut output = vec![vec![0.0; output_len]; channels];
         
+        // Optimization (Bolt): Pre-calculate invariant inverse ratio and replace expensive floating-point floor/ceil operations with safe integer casts. Using iter_mut() with enumerate elides output bounds checks.
+        let inv_ratio = 1.0 / ratio;
+
         for ch in 0..channels {
-            for i in 0..output_len {
-                let src_idx = i as f64 / ratio;
-                let low = src_idx.floor() as usize;
-                let high = src_idx.ceil() as usize;
+            for (i, out_sample) in output[ch].iter_mut().enumerate() {
+                let src_idx = i as f64 * inv_ratio;
+                let low = src_idx as usize;
+                let high = if src_idx == low as f64 { low } else { low + 1 };
                 let frac = src_idx - low as f64;
                 
                 if low < input_len && high < input_len {
                     let sample_low = track[ch][low];
                     let sample_high = track[ch][high];
-                    output[ch][i] = sample_low + (sample_high - sample_low) * frac as f32;
+                    *out_sample = sample_low + (sample_high - sample_low) * frac as f32;
                 } else if low < input_len {
-                    output[ch][i] = track[ch][low];
+                    *out_sample = track[ch][low];
                 }
             }
         }
