@@ -196,18 +196,19 @@ impl MultiTrackMixer {
         let mut output = vec![vec![0.0; output_len]; channels];
         
         for ch in 0..channels {
-            for i in 0..output_len {
+            for (i, out_sample) in output[ch].iter_mut().enumerate() {
                 let src_idx = i as f64 / ratio;
-                let low = src_idx.floor() as usize;
-                let high = src_idx.ceil() as usize;
+                let low = src_idx as usize;
+                let high = if src_idx == low as f64 { low } else { low + 1 };
                 let frac = src_idx - low as f64;
                 
+                // Optimization (Bolt): Replace expensive floating-point operations (.floor(), .ceil()) with safe integer casts and conditional boundary logic, use iterator to elide bounds checks for output vector.
                 if low < input_len && high < input_len {
                     let sample_low = track[ch][low];
                     let sample_high = track[ch][high];
-                    output[ch][i] = sample_low + (sample_high - sample_low) * frac as f32;
+                    *out_sample = sample_low + (sample_high - sample_low) * frac as f32;
                 } else if low < input_len {
-                    output[ch][i] = track[ch][low];
+                    *out_sample = track[ch][low];
                 }
             }
         }
