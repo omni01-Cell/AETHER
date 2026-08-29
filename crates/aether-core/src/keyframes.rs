@@ -170,13 +170,8 @@ impl KeyframeTrack<f32> {
             return self.keyframes[last_idx].value;
         }
 
-        let mut idx = 0;
-        for i in 0..last_idx {
-            if time_ms >= self.keyframes[i].time_ms && time_ms <= self.keyframes[i+1].time_ms {
-                idx = i;
-                break;
-            }
-        }
+        // Optimization (Bolt): Use binary search (partition_point) to find the keyframe index in O(log n) time instead of O(n) linear search.
+        let idx = self.keyframes.partition_point(|k| k.time_ms <= time_ms).saturating_sub(1);
 
         let kf0 = &self.keyframes[idx];
         let kf1 = &self.keyframes[idx + 1];
@@ -245,5 +240,20 @@ mod tests {
         assert_eq!(track.interpolate(500), 5.0);
         assert_eq!(track.interpolate(1000), 10.0);
         assert_eq!(track.interpolate(1500), 10.0);
+
+        // Test multi-keyframe track binary search accuracy
+        track.insert_keyframe(Keyframe {
+            time_ms: 2000,
+            value: 30.0,
+            easing: EasingFunction::Linear,
+        });
+        track.insert_keyframe(Keyframe {
+            time_ms: 3000,
+            value: 0.0,
+            easing: EasingFunction::Linear,
+        });
+
+        assert_eq!(track.interpolate(1500), 20.0);
+        assert_eq!(track.interpolate(2500), 15.0);
     }
 }
