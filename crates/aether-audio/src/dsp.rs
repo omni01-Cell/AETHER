@@ -195,17 +195,22 @@ impl MultiTrackMixer {
         
         let mut output = vec![vec![0.0; output_len]; channels];
         
+        // Optimization (Bolt): Pre-calculate inverse ratio to use multiplication instead of division
+        let inv_ratio = 1.0 / ratio;
+
         for ch in 0..channels {
             for i in 0..output_len {
-                let src_idx = i as f64 / ratio;
-                let low = src_idx.floor() as usize;
-                let high = src_idx.ceil() as usize;
-                let frac = src_idx - low as f64;
+                let src_idx = (i as f64) * inv_ratio;
+                // Optimization (Bolt): Replace expensive .floor() and .ceil() with safe integer casts
+                let low = src_idx as usize;
+                // Important: exactly match behavior for whole numbers to prevent dropping samples
+                let high = if src_idx == low as f64 { low } else { low + 1 };
+                let frac = (src_idx - low as f64) as f32;
                 
-                if low < input_len && high < input_len {
+                if high < input_len {
                     let sample_low = track[ch][low];
                     let sample_high = track[ch][high];
-                    output[ch][i] = sample_low + (sample_high - sample_low) * frac as f32;
+                    output[ch][i] = sample_low + (sample_high - sample_low) * frac;
                 } else if low < input_len {
                     output[ch][i] = track[ch][low];
                 }
