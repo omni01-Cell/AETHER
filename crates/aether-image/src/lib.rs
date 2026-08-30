@@ -371,5 +371,34 @@ mod tests {
         
         let _ = fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn test_gaussian_blur_filter() {
+        use aether_core::{CompositionGraph, RefRegistry, Node, NodeKind, Connection, FilterKind, RenderBackend};
+
+        let dir = temp_test_dir();
+        let cache_dir = dir.join("cache");
+
+        let r1 = Ref { kind: RefKind::Image, id: 1 };
+        let asset1 = create_canvas(20, 20, "white", r1, &cache_dir).unwrap();
+
+        let registry = RefRegistry::new();
+        registry.register(r1, asset1).unwrap();
+
+        let mut graph = CompositionGraph::new();
+        graph.add_node(Node { id: 1, kind: NodeKind::Source(r1) });
+        graph.add_node(Node { id: 2, kind: NodeKind::Filter { kind: FilterKind::GaussianBlur { radius: 3.0 } } });
+        graph.add_node(Node { id: 3, kind: NodeKind::Output });
+
+        graph.connect(Connection { from_node: 1, from_port: 0, to_node: 2, to_port: 0 }).unwrap();
+        graph.connect(Connection { from_node: 2, from_port: 0, to_node: 3, to_port: 0 }).unwrap();
+        graph.output_node = Some(3);
+
+        let cpu = cpu::CpuBackend;
+        let cpu_data = cpu.render(&graph, 20, 20, &registry).unwrap();
+        assert_eq!(cpu_data.len(), 20 * 20 * 4);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
 }
 
