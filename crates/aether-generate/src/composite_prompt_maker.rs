@@ -9,6 +9,12 @@ pub struct CompositePromptMaker {
     pub rule_based: RuleBasedPromptMaker,
 }
 
+impl Default for CompositePromptMaker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CompositePromptMaker {
     pub fn new() -> Self {
         CompositePromptMaker {

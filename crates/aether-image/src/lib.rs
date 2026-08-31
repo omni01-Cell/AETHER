@@ -5,7 +5,6 @@ use std::fs;
 use std::path::Path;
 use tiny_skia::{Color, Pixmap, Transform};
 use resvg::usvg;
-use blake3;
 use image::GenericImageView;
 use aether_core::{AetherError, Ref, Asset, AssetKind};
 
