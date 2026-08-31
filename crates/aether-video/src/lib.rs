@@ -3,7 +3,6 @@ pub mod transitions;
 use std::fs;
 use std::path::Path;
 use ffmpeg_next as ffmpeg;
-use blake3;
 use aether_core::{AetherError, Ref, Asset, AssetKind};
 
 /// Extracts detailed technical metadata from a video file using ffmpeg-next.
