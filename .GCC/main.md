@@ -25,6 +25,7 @@ Plan et implémentation SOTA des fonctionnalités manquantes d'AETHER identifié
 - [2026-06-06] Effectué la recherche SOTA /deep-research et rédigé le plan d'implémentation des manquants de Premiere Pro.
 
 ## 🌿 Active Branches / Plans
+- `bolt-optimize-resampler` : Optimize audio resampling inner loop
 - `bolt-multi-track-mixer-opt` : Optimize MultiTrackMixer array access
 - `bolt-optimize-compressor` : Optimize DynamicCompressor decibel math
 - `plan_add_git_folders` : Suivi des dossiers .agent et .GCC dans Git ([plan_add_git_folders.md](file:///home/omni/Code/AETHER/.GCC/branches/plan_add_git_folders.md))
