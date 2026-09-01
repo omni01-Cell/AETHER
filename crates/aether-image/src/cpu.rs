@@ -131,33 +131,43 @@ impl RenderBackend for CpuBackend {
                             apply_box_blur(&mut filtered, *radius);
                         }
                         FilterKind::Contrast { factor } => {
+                            // Performance Optimization (Bolt): Precompute a 256-entry Look-Up Table (LUT)
+                            // for contrast transformation to avoid expensive floating point arithmetic,
+                            // divisions, and clamping per-pixel in the inner loop.
+                            let mut lut = [0u8; 256];
+                            for (i, slot) in lut.iter_mut().enumerate() {
+                                let norm = i as f32 / 255.0;
+                                *slot = (((norm - 0.5) * factor + 0.5).clamp(0.0, 1.0) * 255.0) as u8;
+                            }
+
                             let pixels = filtered.pixels_mut();
                             for p in pixels {
-                                let r = p.red() as f32 / 255.0;
-                                let g = p.green() as f32 / 255.0;
-                                let b = p.blue() as f32 / 255.0;
-                                let a = p.alpha() as f32 / 255.0;
+                                let r_new = lut[p.red() as usize];
+                                let g_new = lut[p.green() as usize];
+                                let b_new = lut[p.blue() as usize];
+                                let a = p.alpha();
                                 
-                                let r_new = (((r - 0.5) * factor + 0.5).clamp(0.0, 1.0) * 255.0) as u8;
-                                let g_new = (((g - 0.5) * factor + 0.5).clamp(0.0, 1.0) * 255.0) as u8;
-                                let b_new = (((b - 0.5) * factor + 0.5).clamp(0.0, 1.0) * 255.0) as u8;
-                                
-                                *p = tiny_skia::ColorU8::from_rgba(r_new, g_new, b_new, (a * 255.0) as u8).premultiply();
+                                *p = tiny_skia::ColorU8::from_rgba(r_new, g_new, b_new, a).premultiply();
                             }
                         }
                         FilterKind::Brightness { delta } => {
+                            // Performance Optimization (Bolt): Precompute a 256-entry Look-Up Table (LUT)
+                            // for brightness transformation to avoid expensive floating point arithmetic,
+                            // divisions, and clamping per-pixel in the inner loop.
+                            let mut lut = [0u8; 256];
+                            for (i, slot) in lut.iter_mut().enumerate() {
+                                let norm = i as f32 / 255.0;
+                                *slot = ((norm + delta).clamp(0.0, 1.0) * 255.0) as u8;
+                            }
+
                             let pixels = filtered.pixels_mut();
                             for p in pixels {
-                                let r = p.red() as f32 / 255.0;
-                                let g = p.green() as f32 / 255.0;
-                                let b = p.blue() as f32 / 255.0;
-                                let a = p.alpha() as f32 / 255.0;
+                                let r_new = lut[p.red() as usize];
+                                let g_new = lut[p.green() as usize];
+                                let b_new = lut[p.blue() as usize];
+                                let a = p.alpha();
                                 
-                                let r_new = ((r + delta).clamp(0.0, 1.0) * 255.0) as u8;
-                                let g_new = ((g + delta).clamp(0.0, 1.0) * 255.0) as u8;
-                                let b_new = ((b + delta).clamp(0.0, 1.0) * 255.0) as u8;
-                                
-                                *p = tiny_skia::ColorU8::from_rgba(r_new, g_new, b_new, (a * 255.0) as u8).premultiply();
+                                *p = tiny_skia::ColorU8::from_rgba(r_new, g_new, b_new, a).premultiply();
                             }
                         }
                     }
