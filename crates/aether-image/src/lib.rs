@@ -346,11 +346,13 @@ mod tests {
         let mut graph = CompositionGraph::new();
         graph.add_node(Node { id: 1, kind: NodeKind::Source(r1) });
         graph.add_node(Node { id: 2, kind: NodeKind::Filter { kind: FilterKind::Brightness { delta: 0.1 } } });
-        graph.add_node(Node { id: 3, kind: NodeKind::Output });
+        graph.add_node(Node { id: 3, kind: NodeKind::Filter { kind: FilterKind::Contrast { factor: 1.2 } } });
+        graph.add_node(Node { id: 4, kind: NodeKind::Output });
         
         graph.connect(Connection { from_node: 1, from_port: 0, to_node: 2, to_port: 0 }).unwrap();
         graph.connect(Connection { from_node: 2, from_port: 0, to_node: 3, to_port: 0 }).unwrap();
-        graph.output_node = Some(3);
+        graph.connect(Connection { from_node: 3, from_port: 0, to_node: 4, to_port: 0 }).unwrap();
+        graph.output_node = Some(4);
         
         let cpu = cpu::CpuBackend;
         let cpu_data = cpu.render(&graph, 50, 50, &registry).unwrap();
