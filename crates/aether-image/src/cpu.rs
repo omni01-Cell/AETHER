@@ -131,33 +131,33 @@ impl RenderBackend for CpuBackend {
                             apply_box_blur(&mut filtered, *radius);
                         }
                         FilterKind::Contrast { factor } => {
-                            let pixels = filtered.pixels_mut();
-                            for p in pixels {
-                                let r = p.red() as f32 / 255.0;
-                                let g = p.green() as f32 / 255.0;
-                                let b = p.blue() as f32 / 255.0;
-                                let a = p.alpha() as f32 / 255.0;
-                                
-                                let r_new = (((r - 0.5) * factor + 0.5).clamp(0.0, 1.0) * 255.0) as u8;
-                                let g_new = (((g - 0.5) * factor + 0.5).clamp(0.0, 1.0) * 255.0) as u8;
-                                let b_new = (((b - 0.5) * factor + 0.5).clamp(0.0, 1.0) * 255.0) as u8;
-                                
-                                *p = tiny_skia::ColorU8::from_rgba(r_new, g_new, b_new, (a * 255.0) as u8).premultiply();
+                            // Optimization (Bolt): Precompute a 256-entry lookup table (LUT) for 8-bit channel transformation.
+                            // This elides millions of floating-point conversions, divisions, and multiplications per frame.
+                            let mut lut = [0u8; 256];
+                            for i in 0..256 {
+                                let c_f = i as f32 / 255.0;
+                                lut[i] = (((c_f - 0.5) * factor + 0.5).clamp(0.0, 1.0) * 255.0) as u8;
+                            }
+                            for p in filtered.pixels_mut() {
+                                let r_new = lut[p.red() as usize];
+                                let g_new = lut[p.green() as usize];
+                                let b_new = lut[p.blue() as usize];
+                                *p = tiny_skia::ColorU8::from_rgba(r_new, g_new, b_new, p.alpha()).premultiply();
                             }
                         }
                         FilterKind::Brightness { delta } => {
-                            let pixels = filtered.pixels_mut();
-                            for p in pixels {
-                                let r = p.red() as f32 / 255.0;
-                                let g = p.green() as f32 / 255.0;
-                                let b = p.blue() as f32 / 255.0;
-                                let a = p.alpha() as f32 / 255.0;
-                                
-                                let r_new = ((r + delta).clamp(0.0, 1.0) * 255.0) as u8;
-                                let g_new = ((g + delta).clamp(0.0, 1.0) * 255.0) as u8;
-                                let b_new = ((b + delta).clamp(0.0, 1.0) * 255.0) as u8;
-                                
-                                *p = tiny_skia::ColorU8::from_rgba(r_new, g_new, b_new, (a * 255.0) as u8).premultiply();
+                            // Optimization (Bolt): Precompute a 256-entry lookup table (LUT) for 8-bit channel transformation.
+                            // This elides millions of floating-point conversions, divisions, and multiplications per frame.
+                            let mut lut = [0u8; 256];
+                            for i in 0..256 {
+                                let c_f = i as f32 / 255.0;
+                                lut[i] = ((c_f + delta).clamp(0.0, 1.0) * 255.0) as u8;
+                            }
+                            for p in filtered.pixels_mut() {
+                                let r_new = lut[p.red() as usize];
+                                let g_new = lut[p.green() as usize];
+                                let b_new = lut[p.blue() as usize];
+                                *p = tiny_skia::ColorU8::from_rgba(r_new, g_new, b_new, p.alpha()).premultiply();
                             }
                         }
                     }

@@ -371,5 +371,49 @@ mod tests {
         
         let _ = fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn test_contrast_and_brightness_filters() {
+        use aether_core::{CompositionGraph, RefRegistry, Node, NodeKind, Connection, FilterKind, RenderBackend};
+
+        let dir = temp_test_dir();
+        let cache_dir = dir.join("cache");
+
+        let r1 = Ref { kind: RefKind::Image, id: 1 };
+        // Create canvas with mid-gray (128, 128, 128)
+        let asset1 = create_canvas(10, 10, "#808080", r1, &cache_dir).unwrap();
+
+        let registry = RefRegistry::new();
+        registry.register(r1, asset1).unwrap();
+
+        // 1. Test Brightness filter
+        let mut graph_b = CompositionGraph::new();
+        graph_b.add_node(Node { id: 1, kind: NodeKind::Source(r1) });
+        graph_b.add_node(Node { id: 2, kind: NodeKind::Filter { kind: FilterKind::Brightness { delta: 0.1 } } });
+        graph_b.add_node(Node { id: 3, kind: NodeKind::Output });
+        graph_b.connect(Connection { from_node: 1, from_port: 0, to_node: 2, to_port: 0 }).unwrap();
+        graph_b.connect(Connection { from_node: 2, from_port: 0, to_node: 3, to_port: 0 }).unwrap();
+        graph_b.output_node = Some(3);
+
+        let cpu = cpu::CpuBackend;
+        let b_data = cpu.render(&graph_b, 10, 10, &registry).unwrap();
+        assert_eq!(b_data.len(), 10 * 10 * 4);
+        // Initial gray is ~128. Brightness delta +0.1 adds ~25.5 -> ~153
+        assert!(b_data[0] > 128 && b_data[0] <= 160);
+
+        // 2. Test Contrast filter
+        let mut graph_c = CompositionGraph::new();
+        graph_c.add_node(Node { id: 1, kind: NodeKind::Source(r1) });
+        graph_c.add_node(Node { id: 2, kind: NodeKind::Filter { kind: FilterKind::Contrast { factor: 1.5 } } });
+        graph_c.add_node(Node { id: 3, kind: NodeKind::Output });
+        graph_c.connect(Connection { from_node: 1, from_port: 0, to_node: 2, to_port: 0 }).unwrap();
+        graph_c.connect(Connection { from_node: 2, from_port: 0, to_node: 3, to_port: 0 }).unwrap();
+        graph_c.output_node = Some(3);
+
+        let c_data = cpu.render(&graph_c, 10, 10, &registry).unwrap();
+        assert_eq!(c_data.len(), 10 * 10 * 4);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
 }
 
