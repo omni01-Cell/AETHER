@@ -189,6 +189,8 @@ impl MultiTrackMixer {
         }
         
         let ratio = to_rate as f64 / from_rate as f64;
+        // Optimization (Bolt): Pre-calculate inverse ratio to elide division in the inner loop.
+        let inv_ratio = 1.0 / ratio;
         let channels = track.len();
         let input_len = track[0].len();
         let output_len = (input_len as f64 * ratio).round() as usize;
@@ -196,18 +198,21 @@ impl MultiTrackMixer {
         let mut output = vec![vec![0.0; output_len]; channels];
         
         for ch in 0..channels {
-            for i in 0..output_len {
-                let src_idx = i as f64 / ratio;
-                let low = src_idx.floor() as usize;
-                let high = src_idx.ceil() as usize;
+            let src_track = &track[ch];
+            // Optimization (Bolt): Use iterator for output to elide bounds checks.
+            for (i, out_sample) in output[ch].iter_mut().enumerate() {
+                let src_idx = i as f64 * inv_ratio;
+                // Optimization (Bolt): Replace expensive floor/ceil with safe integer casts matching exact semantics.
+                let low = src_idx as usize;
+                let high = if src_idx == low as f64 { low } else { low + 1 };
                 let frac = src_idx - low as f64;
                 
-                if low < input_len && high < input_len {
-                    let sample_low = track[ch][low];
-                    let sample_high = track[ch][high];
-                    output[ch][i] = sample_low + (sample_high - sample_low) * frac as f32;
+                if high < input_len {
+                    let sample_low = src_track[low];
+                    let sample_high = src_track[high];
+                    *out_sample = sample_low + (sample_high - sample_low) * frac as f32;
                 } else if low < input_len {
-                    output[ch][i] = track[ch][low];
+                    *out_sample = src_track[low];
                 }
             }
         }
