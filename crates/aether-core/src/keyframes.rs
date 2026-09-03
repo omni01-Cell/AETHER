@@ -170,13 +170,8 @@ impl KeyframeTrack<f32> {
             return self.keyframes[last_idx].value;
         }
 
-        let mut idx = 0;
-        for i in 0..last_idx {
-            if time_ms >= self.keyframes[i].time_ms && time_ms <= self.keyframes[i+1].time_ms {
-                idx = i;
-                break;
-            }
-        }
+        // Optimization (Bolt): Use binary search (partition_point) to find the keyframe interval in O(log N) time instead of O(N) linear search.
+        let idx = self.keyframes.partition_point(|k| k.time_ms <= time_ms) - 1;
 
         let kf0 = &self.keyframes[idx];
         let kf1 = &self.keyframes[idx + 1];
@@ -245,5 +240,31 @@ mod tests {
         assert_eq!(track.interpolate(500), 5.0);
         assert_eq!(track.interpolate(1000), 10.0);
         assert_eq!(track.interpolate(1500), 10.0);
+    }
+
+    #[test]
+    fn test_keyframe_track_binary_search() {
+        let mut track = KeyframeTrack::new();
+        for i in 0..100 {
+            track.insert_keyframe(Keyframe {
+                time_ms: i * 100,
+                value: (i * 10) as f32,
+                easing: EasingFunction::Linear,
+            });
+        }
+
+        // Test exact keyframe points
+        assert_eq!(track.interpolate(0), 0.0);
+        assert_eq!(track.interpolate(5000), 500.0);
+        assert_eq!(track.interpolate(9900), 990.0);
+
+        // Test midpoints between keyframes
+        assert_eq!(track.interpolate(50), 5.0);
+        assert_eq!(track.interpolate(2550), 255.0);
+        assert_eq!(track.interpolate(9850), 985.0);
+
+        // Test boundary limits
+        assert_eq!(track.interpolate(0), 0.0);
+        assert_eq!(track.interpolate(10000), 990.0);
     }
 }
