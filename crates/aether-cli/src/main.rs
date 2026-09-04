@@ -11,7 +11,6 @@ use tokio::net::UnixStream;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
-use serde_json;
 use aether_core::{Command, CommandResult, Snapshot};
 use aether_project::{ProjectManager, ProjectCreateSpec, DeleteMode};
 
@@ -19,9 +18,9 @@ fn tokenize(line: &str) -> Result<Vec<String>, String> {
     let mut tokens = Vec::new();
     let mut current = String::new();
     let mut in_quotes = false;
-    let mut chars = line.chars().peekable();
+    let chars = line.chars().peekable();
 
-    while let Some(c) = chars.next() {
+    for c in chars {
         if c == '"' {
             in_quotes = !in_quotes;
         } else if c.is_whitespace() && !in_quotes {
@@ -1060,10 +1059,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("=======================================================");
 
         // Try to show current active project
-        let mut active_project_dir = match pm.resolve_for_command(explicit_project.as_deref()) {
-            Ok(d) => Some(d),
-            Err(_) => None,
-        };
+        let mut active_project_dir = pm.resolve_for_command(explicit_project.as_deref()).ok();
 
         if let Some(ref dir) = active_project_dir {
             println!("Active project context: {}", dir.to_string_lossy());
@@ -1137,10 +1133,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let _ = execute_local_command(cmd).await;
                                 
                                 // Re-resolve active project
-                                active_project_dir = match pm.resolve_for_command(None) {
-                                    Ok(d) => Some(d),
-                                    Err(_) => None,
-                                };
+                                active_project_dir = pm.resolve_for_command(None).ok();
                                 
                                 if active_project_dir != old_active {
                                     stream = None; // Reset stream so we connect to the new project daemon
@@ -1471,7 +1464,7 @@ mod tests {
 
         // The PM created it and made it the active project in the custom registry.
         // Set AETHER_PROJECT env variable to this project so default resolution inside the CLI works
-        std::env::set_var("AETHER_PROJECT", &proj_dir.to_string_lossy().to_string());
+        std::env::set_var("AETHER_PROJECT", proj_dir.to_string_lossy().to_string());
 
         // 2. Run 'plan create'
         let cmd_create = parse_dsl("plan create \"Generate story\"").unwrap();
